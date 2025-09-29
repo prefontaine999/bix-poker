@@ -13,9 +13,15 @@
             0%, 100% { opacity: 1; }
             50% { opacity: .5; }
         }
+        .static-ticker {
+            white-space: nowrap;
+            text-align: center;
+            display: block;
+            width: 100%;
+        }
     </style>
 </head>
-<body class="bg-gradient-to-br from-green-800 to-green-900 text-white min-h-screen">
+<body class="bg-gradient-to-br from-slate-950 to-stone-900 text-stone-100 min-h-screen">
     <div id="app"></div>
 
     <script>
@@ -81,13 +87,19 @@
                     
                     if (this.isRunning && this.timeLeft > 0 && !isLastLevel) {
                         this.timeLeft--;
+                        
+                        // Play warning sound at 60 seconds
+                        if (this.timeLeft === 60 && !this.isExtended) {
+                            this.playWarningSound();
+                        }
+                        
                         this.render();
                     } else if (this.timeLeft === 0 && this.isRunning && !this.isExtended && !isLastLevel) {
                         if (this.currentLevel < this.blindLevels.length - 1) {
                             this.currentLevel++;
                             this.timeLeft = this.totalTime;
                             this.isExtended = false;
-                            this.playSound();
+                            this.playLevelEndSound();
                             this.render();
                         } else {
                             this.isRunning = false;
@@ -97,12 +109,72 @@
                 }, 1000);
             }
 
-            playSound() {
+            playWarningSound() {
                 try {
-                    const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSmDqg');
-                    audio.play();
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    // Fire siren: sweeping up and down
+                    oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
+                    oscillator.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.3);
+                    oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.6);
+                    oscillator.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.9);
+                    oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 1.2);
+                    oscillator.type = 'sine';
+                    
+                    gainNode.gain.setValueAtTime(0.9, audioContext.currentTime);
+                    gainNode.gain.setValueAtTime(0.9, audioContext.currentTime + 1.2);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 1.25);
+                    
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + 1.25);
+                    
+                    oscillator.onended = () => {
+                        audioContext.close();
+                    };
                 } catch (e) {
-                    // Ignore audio errors
+                    console.log('Could not play warning sound:', e);
+                }
+            }
+
+            playLevelEndSound() {
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Four rapid beeps
+                    const beepTimes = [0, 0.15, 0.3, 0.45];
+                    
+                    beepTimes.forEach((startTime) => {
+                        const oscillator = audioContext.createOscillator();
+                        const gainNode = audioContext.createGain();
+                        
+                        oscillator.connect(gainNode);
+                        gainNode.connect(audioContext.destination);
+                        
+                        oscillator.frequency.value = 880;
+                        oscillator.type = 'sine';
+                        
+                        const beepStart = audioContext.currentTime + startTime;
+                        const beepEnd = beepStart + 0.1;
+                        
+                        gainNode.gain.setValueAtTime(0, beepStart);
+                        gainNode.gain.linearRampToValueAtTime(0.9, beepStart + 0.005);
+                        gainNode.gain.exponentialRampToValueAtTime(0.01, beepEnd);
+                        
+                        oscillator.start(beepStart);
+                        oscillator.stop(beepEnd);
+                    });
+                    
+                    // Clean up after all beeps finish
+                    setTimeout(() => {
+                        audioContext.close();
+                    }, 1000);
+                } catch (e) {
+                    console.log('Could not play level end sound:', e);
                 }
             }
 
@@ -169,10 +241,10 @@
                 return `
                     <div class="max-w-2xl mx-auto p-6 min-h-screen">
                         <div class="text-center mb-8">
-                            <p class="text-lg text-green-200">Setup Your Game</p>
+                            <p class="text-lg text-stone-400">Setup Your Game</p>
                         </div>
 
-                        <div class="bg-black bg-opacity-40 rounded-lg p-8">
+                        <div class="bg-stone-950 bg-opacity-80 rounded-lg p-8">
                             <h2 class="text-2xl font-semibold mb-6 text-center">Tournament Settings</h2>
                             
                             <div class="space-y-6">
@@ -180,13 +252,13 @@
                                 <div>
                                     <label class="block text-lg font-semibold mb-3">Number of Players</label>
                                     <div class="flex items-center justify-center gap-4">
-                                        <button class="bg-red-600 hover:bg-red-500 p-2 rounded-full" onclick="app.adjustPlayers(-1)">
+                                        <button class="bg-stone-700 hover:bg-stone-600 p-2 rounded-full" onclick="app.adjustPlayers(-1)">
                                             ${icons.Minus}
                                         </button>
-                                        <div class="bg-gray-700 px-6 py-3 rounded-lg text-xl font-bold min-w-16 text-center">
+                                        <div class="bg-stone-800 px-6 py-3 rounded-lg text-xl font-bold min-w-16 text-center">
                                             ${this.setupData.totalPlayers}
                                         </div>
-                                        <button class="bg-green-600 hover:bg-green-500 p-2 rounded-full" onclick="app.adjustPlayers(1)">
+                                        <button class="bg-amber-700 hover:bg-amber-600 p-2 rounded-full" onclick="app.adjustPlayers(1)">
                                             ${icons.Plus}
                                         </button>
                                     </div>
@@ -196,13 +268,13 @@
                                 <div>
                                     <label class="block text-lg font-semibold mb-3">Buy-in Amount (THB)</label>
                                     <div class="flex items-center justify-center gap-4">
-                                        <button class="bg-red-600 hover:bg-red-500 p-2 rounded-full" onclick="app.adjustBuyIn(-100)">
+                                        <button class="bg-stone-700 hover:bg-stone-600 p-2 rounded-full" onclick="app.adjustBuyIn(-100)">
                                             ${icons.Minus}
                                         </button>
-                                        <div class="bg-gray-700 px-6 py-3 rounded-lg text-xl font-bold min-w-24 text-center">
+                                        <div class="bg-stone-800 px-6 py-3 rounded-lg text-xl font-bold min-w-24 text-center">
                                             ${this.formatNumber(this.setupData.buyIn)}
                                         </div>
-                                        <button class="bg-green-600 hover:bg-green-500 p-2 rounded-full" onclick="app.adjustBuyIn(100)">
+                                        <button class="bg-amber-700 hover:bg-amber-600 p-2 rounded-full" onclick="app.adjustBuyIn(100)">
                                             ${icons.Plus}
                                         </button>
                                     </div>
@@ -212,13 +284,13 @@
                                 <div>
                                     <label class="block text-lg font-semibold mb-3">Level Duration (minutes)</label>
                                     <div class="flex items-center justify-center gap-4">
-                                        <button class="bg-red-600 hover:bg-red-500 p-2 rounded-full" onclick="app.adjustDuration(-5)">
+                                        <button class="bg-stone-700 hover:bg-stone-600 p-2 rounded-full" onclick="app.adjustDuration(-1)">
                                             ${icons.Minus}
                                         </button>
-                                        <div class="bg-gray-700 px-6 py-3 rounded-lg text-xl font-bold min-w-16 text-center">
+                                        <div class="bg-stone-800 px-6 py-3 rounded-lg text-xl font-bold min-w-16 text-center">
                                             ${this.setupData.levelDuration}
                                         </div>
-                                        <button class="bg-green-600 hover:bg-green-500 p-2 rounded-full" onclick="app.adjustDuration(5)">
+                                        <button class="bg-amber-700 hover:bg-amber-600 p-2 rounded-full" onclick="app.adjustDuration(1)">
                                             ${icons.Plus}
                                         </button>
                                     </div>
@@ -228,32 +300,32 @@
                                 <div>
                                     <label class="block text-lg font-semibold mb-3">Starting Stack</label>
                                     <div class="flex items-center justify-center gap-4">
-                                        <button class="bg-red-600 hover:bg-red-500 p-2 rounded-full" onclick="app.adjustStack(-5000)">
+                                        <button class="bg-stone-700 hover:bg-stone-600 p-2 rounded-full" onclick="app.adjustStack(-5000)">
                                             ${icons.Minus}
                                         </button>
-                                        <div class="bg-gray-700 px-6 py-3 rounded-lg text-xl font-bold min-w-24 text-center">
+                                        <div class="bg-stone-800 px-6 py-3 rounded-lg text-xl font-bold min-w-24 text-center">
                                             ${this.formatNumber(this.setupData.startingStack)}
                                         </div>
-                                        <button class="bg-green-600 hover:bg-green-500 p-2 rounded-full" onclick="app.adjustStack(5000)">
+                                        <button class="bg-amber-700 hover:bg-amber-600 p-2 rounded-full" onclick="app.adjustStack(5000)">
                                             ${icons.Plus}
                                         </button>
                                     </div>
                                 </div>
 
                                 <!-- Starting Big Blinds -->
-                                <div class="bg-blue-600 bg-opacity-30 rounded-lg p-4 text-center">
+                                <div class="bg-slate-800 bg-opacity-50 rounded-lg p-4 text-center">
                                     <p class="text-lg">Starting Stack: <span class="font-bold">${startingBB} Big Blinds</span></p>
-                                    <p class="text-sm text-blue-200">(${this.formatNumber(this.setupData.startingStack)} chips ÷ 400 BB)</p>
+                                    <p class="text-sm text-stone-400">(${this.formatNumber(this.setupData.startingStack)} chips ÷ 400 BB)</p>
                                 </div>
 
                                 <!-- Total Prize Pool -->
-                                <div class="bg-green-600 bg-opacity-30 rounded-lg p-4 text-center">
+                                <div class="bg-amber-900 bg-opacity-30 rounded-lg p-4 text-center">
                                     <p class="text-lg">Total Prize Pool: <span class="font-bold">${this.formatNumber(totalPrizePool)} THB</span></p>
-                                    <p class="text-sm text-green-200">(${this.setupData.totalPlayers} players × ${this.formatNumber(this.setupData.buyIn)} THB)</p>
+                                    <p class="text-sm text-amber-300">(${this.setupData.totalPlayers} players × ${this.formatNumber(this.setupData.buyIn)} THB)</p>
                                 </div>
                             </div>
 
-                            <button onclick="app.goToPayouts()" class="w-full mt-8 bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-4 px-6 rounded-lg text-xl transition-colors">
+                            <button onclick="app.goToPayouts()" class="w-full mt-8 bg-amber-700 hover:bg-amber-600 text-stone-900 font-bold py-4 px-6 rounded-lg text-xl transition-colors">
                                 Next: Setup Payouts
                             </button>
                         </div>
@@ -270,14 +342,14 @@
                 return `
                     <div class="max-w-2xl mx-auto p-6 min-h-screen">
                         <div class="text-center mb-8">
-                            <p class="text-lg text-green-200">Setup Payouts</p>
+                            <p class="text-lg text-stone-400">Setup Payouts</p>
                         </div>
 
-                        <div class="bg-black bg-opacity-40 rounded-lg p-8">
+                        <div class="bg-stone-950 bg-opacity-80 rounded-lg p-8">
                             <h2 class="text-2xl font-semibold mb-6 text-center">Prize Pool Distribution</h2>
                             
                             <!-- Total Prize Pool -->
-                            <div class="bg-blue-600 bg-opacity-30 rounded-lg p-4 text-center mb-6">
+                            <div class="bg-slate-800 bg-opacity-50 rounded-lg p-4 text-center mb-6">
                                 <p class="text-xl">Total Prize Pool: <span class="font-bold">${this.formatNumber(totalPrizePool)} THB</span></p>
                             </div>
 
@@ -286,7 +358,7 @@
                                 <div>
                                     <label class="block text-lg font-semibold mb-3">Places Paid</label>
                                     <div class="flex justify-center">
-                                        <select onchange="app.updatePlacesPaid(this.value)" class="bg-gray-700 text-white px-4 py-2 rounded-lg text-lg font-semibold">
+                                        <select onchange="app.updatePlacesPaid(this.value)" class="bg-stone-800 text-stone-100 px-4 py-2 rounded-lg text-lg font-semibold">
                                             ${[1,2,3,4,5].map(i => `<option value="${i}" ${i === this.placesPaid ? 'selected' : ''}>${i}</option>`).join('')}
                                         </select>
                                     </div>
@@ -298,17 +370,17 @@
                                         <div>
                                             <label class="block text-lg font-semibold mb-2">${this.getOrdinal(i + 1)} Place:</label>
                                             <div class="flex items-center gap-2">
-                                                <button onclick="app.adjustPayout(${i}, -1000)" class="bg-red-600 hover:bg-red-500 p-2 rounded-full">
+                                                <button onclick="app.adjustPayout(${i}, -1000)" class="bg-stone-700 hover:bg-stone-600 p-2 rounded-full">
                                                     ${icons.Minus}
                                                 </button>
                                                 <input 
                                                     type="number" 
                                                     value="${this.payouts[i] || ''}" 
                                                     onchange="app.updatePayout(${i}, this.value)"
-                                                    class="bg-gray-700 text-white px-4 py-2 rounded-lg text-lg font-bold flex-1 text-center"
+                                                    class="bg-stone-800 text-stone-100 px-4 py-2 rounded-lg text-lg font-bold flex-1 text-center"
                                                     placeholder="0"
                                                 >
-                                                <button onclick="app.adjustPayout(${i}, 1000)" class="bg-green-600 hover:bg-green-500 p-2 rounded-full">
+                                                <button onclick="app.adjustPayout(${i}, 1000)" class="bg-amber-700 hover:bg-amber-600 p-2 rounded-full">
                                                     ${icons.Plus}
                                                 </button>
                                                 <span class="text-lg font-semibold">THB</span>
@@ -318,24 +390,24 @@
                                 </div>
 
                                 <!-- Running Total -->
-                                <div class="bg-gray-700 bg-opacity-50 rounded-lg p-4">
+                                <div class="bg-stone-800 bg-opacity-50 rounded-lg p-4">
                                     <div class="flex justify-between items-center mb-2">
                                         <span class="text-lg">Total Payouts:</span>
-                                        <span class="text-lg font-bold ${isValidTotal ? 'text-green-400' : 'text-red-400'}">${this.formatNumber(currentTotal)} THB</span>
+                                        <span class="text-lg font-bold ${isValidTotal ? 'text-amber-400' : 'text-stone-400'}">${this.formatNumber(currentTotal)} THB</span>
                                     </div>
                                     ${!isValidTotal ? `
-                                        <div class="text-center text-sm ${remaining > 0 ? 'text-yellow-400' : 'text-red-400'}">
+                                        <div class="text-center text-sm ${remaining > 0 ? 'text-amber-400' : 'text-stone-400'}">
                                             ${remaining > 0 ? `Remaining: ${this.formatNumber(remaining)} THB` : `Over by: ${this.formatNumber(Math.abs(remaining))} THB`}
                                         </div>
-                                    ` : '<div class="text-center text-sm text-green-400">✓ Payouts match prize pool</div>'}
+                                    ` : '<div class="text-center text-sm text-amber-400">✓ Payouts match prize pool</div>'}
                                 </div>
                             </div>
 
                             <div class="flex gap-4 mt-8">
-                                <button onclick="app.backToSetup()" class="flex-1 bg-gray-600 hover:bg-gray-500 text-white font-bold py-4 px-6 rounded-lg text-xl transition-colors">
+                                <button onclick="app.backToSetup()" class="flex-1 bg-stone-700 hover:bg-stone-600 text-stone-100 font-bold py-4 px-6 rounded-lg text-xl transition-colors">
                                     Back
                                 </button>
-                                <button onclick="app.startTournament()" ${!isValidTotal ? 'disabled' : ''} class="flex-1 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 disabled:opacity-50 text-black font-bold py-4 px-6 rounded-lg text-xl transition-colors">
+                                <button onclick="app.startTournament()" ${!isValidTotal ? 'disabled' : ''} class="flex-1 bg-amber-700 hover:bg-amber-600 disabled:bg-stone-800 disabled:opacity-50 text-stone-900 font-bold py-4 px-6 rounded-lg text-xl transition-colors">
                                     Start Tournament
                                 </button>
                             </div>
@@ -363,34 +435,32 @@
                 const averageBigBlinds = Math.round(averageStack / currentBlinds.big);
 
                 const timerColorClass = this.isExtended 
-                    ? 'text-orange-300' 
+                    ? 'text-amber-400' 
                     : this.currentLevel === this.blindLevels.length - 1
-                        ? 'text-green-400'
-                        : this.timeLeft <= 30 
+                        ? 'text-amber-500'
+                        : this.timeLeft <= 60 
                             ? 'text-red-400 animate-pulse' 
-                            : this.timeLeft <= 60 
-                                ? 'text-red-400' 
-                                : 'text-yellow-300';
+                            : 'text-amber-500';
 
                 const progressColorClass = this.isExtended 
-                    ? 'bg-orange-400' 
+                    ? 'bg-amber-600' 
                     : this.currentLevel === this.blindLevels.length - 1
-                        ? 'bg-green-400'
+                        ? 'bg-amber-500'
                         : this.timeLeft <= 60 
-                            ? 'bg-red-400' 
-                            : 'bg-yellow-400';
+                            ? 'bg-red-500' 
+                            : 'bg-amber-700';
 
                 return `
                     <div class="max-w-5xl mx-auto p-6 min-h-screen">
                         <!-- Top Row: Ticker and Settings Button -->
                         <div class="flex items-center gap-4 mb-6">
                             <!-- Payout Ticker -->
-                            <div class="flex-1 bg-gray-800 text-yellow-300 py-3 rounded-lg text-center">
+                            <div class="flex-1 bg-stone-900 text-amber-600 py-3 rounded-lg text-center">
                                 ${this.getPayoutTickerContent()}
                             </div>
                             
                             <!-- Settings Button -->
-                            <button onclick="app.showSettingsMenu()" class="bg-gray-600 hover:bg-gray-500 px-6 py-3 rounded-lg font-semibold transition-colors flex items-center gap-2 flex-shrink-0">
+                            <button onclick="app.showSettingsMenu()" class="bg-stone-700 hover:bg-stone-600 px-6 py-3 rounded-lg font-semibold transition-colors flex items-center gap-2 flex-shrink-0">
                                 ${icons.Settings}
                                 Setup Game
                             </button>
@@ -399,7 +469,7 @@
                         <!-- Top Row: Players Left and Average Stack -->
                         <div class="grid grid-cols-2 gap-8 mb-6">
                             <!-- Players Left -->
-                            <div class="bg-purple-600 bg-opacity-80 rounded-lg p-6 text-center min-w-0">
+                            <div class="bg-slate-800 bg-opacity-80 rounded-lg p-6 text-center min-w-0">
                                 <div class="flex items-center justify-center gap-2 mb-2">
                                     ${icons.Users}
                                     <h3 class="text-xl font-semibold">Players Left</h3>
@@ -407,57 +477,60 @@
                                 <div class="text-4xl font-bold mb-3 leading-tight mx-auto w-fit">${this.playersRemaining}</div>
                                 <div class="flex justify-center gap-3">
                                     <button onclick="app.eliminatePlayer()" ${this.playersRemaining <= 1 ? 'disabled' : ''} 
-                                        class="bg-red-600 hover:bg-red-500 disabled:bg-gray-600 disabled:opacity-50 py-2 px-4 rounded font-semibold text-lg">
+                                        class="bg-stone-700 hover:bg-stone-600 disabled:bg-stone-900 disabled:opacity-50 py-2 px-4 rounded font-semibold text-lg">
                                         OUT
                                     </button>
                                     <button onclick="app.addPlayer()" ${this.playersRemaining >= this.setupData.totalPlayers ? 'disabled' : ''} 
-                                        class="bg-gray-600 hover:bg-gray-500 disabled:bg-gray-800 disabled:opacity-50 p-2 rounded" title="Undo elimination">
+                                        class="bg-stone-700 hover:bg-stone-600 disabled:bg-stone-900 disabled:opacity-50 p-2 rounded" title="Undo elimination">
                                         ${icons.RotateCcw}
                                     </button>
                                 </div>
                             </div>
                             
                             <!-- Average Stack -->
-                            <div class="bg-orange-600 bg-opacity-80 rounded-lg p-6 text-center">
+                            <div class="bg-stone-800 bg-opacity-80 rounded-lg p-6 text-center">
                                 <h3 class="text-xl font-semibold mb-2">Average Stack</h3>
                                 <div class="text-3xl font-bold mb-1 px-4">${this.formatNumberCompact(averageStack)}</div>
-                                <div class="text-lg text-orange-200 mb-2">chips</div>
-                                <div class="h-px bg-orange-300 mx-8 mb-2"></div>
+                                <div class="text-lg text-stone-400 mb-2">chips</div>
+                                <div class="h-px bg-stone-600 mx-8 mb-2"></div>
                                 <div class="text-3xl font-bold mb-1 px-4">${averageBigBlinds}</div>
-                                <div class="text-lg text-orange-200">big blinds</div>
+                                <div class="text-lg text-stone-400">big blinds</div>
                             </div>
                         </div>
 
                         <!-- Bottom Row: Timer (2/3) and Blind Structure (1/3) -->
                         <div class="grid grid-cols-3 gap-6">
                             <!-- Left: Timer Section (takes 2 columns = 2/3 width) -->
-                            <div class="col-span-2 bg-black bg-opacity-40 rounded-lg p-8">
+                            <div class="col-span-2 bg-stone-950 bg-opacity-60 rounded-lg p-8">
                                 <h2 class="text-3xl font-semibold mb-4 text-center">LEVEL ${currentBlinds.level}</h2>
                                 
                                 <!-- Current Blinds Display -->
-                                <div class="grid grid-cols-2 gap-4 mb-6 max-w-lg mx-auto">
-                                    <div class="bg-red-600 bg-opacity-80 rounded-lg p-4 text-center">
-                                        <h4 class="text-lg font-semibold mb-2">Small Blind</h4>
-                                        <div class="text-3xl font-bold px-2">${this.formatNumber(currentBlinds.small)}</div>
+                                <div class="grid grid-cols-2 gap-4 mb-4 max-w-lg mx-auto">
+                                    <div class="bg-stone-800 rounded-lg p-4 text-center border-2 border-stone-600 shadow-lg">
+                                        <h4 class="text-sm font-semibold mb-3 text-stone-500">SB</h4>
+                                        <div class="text-5xl font-bold px-2 text-white">${this.formatNumber(currentBlinds.small)}</div>
                                     </div>
                                     
-                                    <div class="bg-blue-600 bg-opacity-80 rounded-lg p-4 text-center">
-                                        <h4 class="text-lg font-semibold mb-2">Big Blind</h4>
-                                        <div class="text-3xl font-bold px-2">${this.formatNumber(currentBlinds.big)}</div>
+                                    <div class="bg-slate-800 rounded-lg p-4 text-center border-2 border-slate-600 shadow-lg">
+                                        <h4 class="text-sm font-semibold mb-3 text-stone-500">BB</h4>
+                                        <div class="text-5xl font-bold px-2 text-white">${this.formatNumber(currentBlinds.big)}</div>
                                     </div>
                                 </div>
                                 
+                                <!-- Separator -->
+                                <div class="h-px bg-stone-700 mx-16 mb-6"></div>
+                                
                                 <!-- Timer Display -->
                                 <div class="text-center mb-6">
-                                    <div class="text-6xl font-mono font-bold mb-4 px-4 ${timerColorClass}">
+                                    <div class="text-7xl font-mono font-bold mb-4 px-4 ${timerColorClass}">
                                         ${this.currentLevel === this.blindLevels.length - 1 ? '∞' : (this.isExtended ? 'EXTENDED' : this.formatTime(this.timeLeft))}
                                     </div>
                                     
-                                    ${this.isExtended ? '<div class="text-xl text-orange-200 mb-4">Level continues until manually advanced</div>' : ''}
-                                    ${this.currentLevel === this.blindLevels.length - 1 ? '<div class="text-xl text-green-200 mb-4">Final Level - No Time Limit</div>' : ''}
+                                    ${this.isExtended ? '<div class="text-xl text-amber-400 mb-4">Level continues until manually advanced</div>' : ''}
+                                    ${this.currentLevel === this.blindLevels.length - 1 ? '<div class="text-xl text-amber-400 mb-4">Final Level - No Time Limit</div>' : ''}
                                     
                                     <!-- Progress Bar -->
-                                    <div class="w-full bg-gray-700 rounded-full h-6 mb-6 overflow-hidden">
+                                    <div class="w-full bg-stone-800 rounded-full h-6 mb-6 overflow-hidden">
                                         <div class="h-6 transition-all duration-1000 ${progressColorClass} ${(this.currentLevel === this.blindLevels.length - 1 || progressPercent >= 100) ? 'rounded-full' : 'rounded-l-full'}"
                                             style="width: ${this.currentLevel === this.blindLevels.length - 1 ? '100' : progressPercent}%; transition-property: width;">
                                         </div>
@@ -466,49 +539,45 @@
                                     <!-- Timer Controls -->
                                     <div class="flex justify-center gap-4 mb-4">
                                         <button onclick="app.prevLevel()" ${this.currentLevel === 0 ? 'disabled' : ''} 
-                                            class="bg-gray-600 hover:bg-gray-500 disabled:bg-gray-800 disabled:opacity-50 p-3 rounded-full transition-colors">
+                                            class="bg-stone-700 hover:bg-stone-600 disabled:bg-stone-900 disabled:opacity-50 p-3 rounded-full transition-colors">
                                             ${icons.SkipBack}
                                         </button>
                                         
                                         <button onclick="app.toggleTimer()" ${this.currentLevel === this.blindLevels.length - 1 ? 'disabled' : ''} 
-                                            class="p-3 rounded-full transition-colors ${this.currentLevel === this.blindLevels.length - 1 ? 'bg-gray-800 opacity-50' : (this.isRunning ? 'bg-red-600 hover:bg-red-500' : 'bg-green-600 hover:bg-green-500')}">
+                                            class="p-3 rounded-full transition-colors ${this.currentLevel === this.blindLevels.length - 1 ? 'bg-stone-900 opacity-50' : (this.isRunning ? 'bg-stone-700 hover:bg-stone-600' : 'bg-amber-700 hover:bg-amber-600')}">
                                             ${this.isRunning ? icons.Pause : icons.Play}
                                         </button>
                                         
                                         <button onclick="app.addTwoMinutes()" ${this.currentLevel === this.blindLevels.length - 1 ? 'disabled' : ''} 
-                                            class="bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:opacity-50 px-4 py-3 rounded-full transition-colors font-semibold text-sm">
+                                            class="bg-slate-700 hover:bg-slate-600 disabled:bg-stone-900 disabled:opacity-50 px-4 py-3 rounded-full transition-colors font-semibold text-sm">
                                             +2 min
                                         </button>
                                         
+                                        <button onclick="app.toggleExtend()" ${this.currentLevel === this.blindLevels.length - 1 ? 'disabled' : ''} 
+                                            class="p-3 rounded-full transition-colors font-semibold text-xl ${this.currentLevel === this.blindLevels.length - 1 ? 'bg-stone-900 opacity-50' : (this.isExtended ? 'bg-amber-700 hover:bg-amber-600' : 'bg-stone-700 hover:bg-stone-600')}">
+                                            ${this.isExtended ? '⏰' : '⏳'}
+                                        </button>
+                                        
                                         <button onclick="app.nextLevel()" ${this.currentLevel === this.blindLevels.length - 1 ? 'disabled' : ''} 
-                                            class="bg-gray-600 hover:bg-gray-500 disabled:bg-gray-800 disabled:opacity-50 p-3 rounded-full transition-colors">
+                                            class="bg-stone-700 hover:bg-stone-600 disabled:bg-stone-900 disabled:opacity-50 p-3 rounded-full transition-colors">
                                             ${icons.SkipForward}
                                         </button>
                                     </div>
-
-                                    <!-- Extend Level Button -->
-                                    ${this.currentLevel === this.blindLevels.length - 1 ? '' : `
-                                    <div class="flex justify-center">
-                                        <button onclick="app.toggleExtend()" class="px-6 py-2 rounded-lg font-semibold text-lg transition-colors ${this.isExtended ? 'bg-orange-600 hover:bg-orange-500 text-white' : 'bg-purple-600 hover:bg-purple-500 text-white'}">
-                                            ${this.isExtended ? '⏰ Resume Timer' : '⏳ Extend Level'}
-                                        </button>
-                                    </div>
-                                    `}
                                 </div>
                             </div>
 
                             <!-- Right: Blind Structure (takes 1 column = 1/3 width) -->
-                            <div class="bg-black bg-opacity-20 rounded-lg p-4">
+                            <div class="bg-stone-950 bg-opacity-40 rounded-lg p-4">
                                 <h3 class="text-lg font-semibold mb-3 text-center">Blind Structure</h3>
                                 <div class="space-y-1">
-                                    <div class="grid grid-cols-3 gap-2 text-sm font-semibold pb-2 border-b border-gray-500">
+                                    <div class="grid grid-cols-3 gap-2 text-sm font-semibold pb-2 border-b border-stone-700">
                                         <div class="text-center">Level</div>
                                         <div class="text-center">Small</div>
                                         <div class="text-center">Big</div>
                                     </div>
                                     
                                     ${this.blindLevels.map((level, index) => `
-                                        <div class="grid grid-cols-3 gap-2 text-sm ${index === this.currentLevel ? 'bg-yellow-600 rounded p-1' : 'p-1'}">
+                                        <div class="grid grid-cols-3 gap-2 text-sm ${index === this.currentLevel ? 'bg-amber-800 rounded p-1' : 'p-1'}">
                                             <div class="text-center font-semibold">${level.level}</div>
                                             <div class="text-center">${this.formatNumberCompact(level.small)}</div>
                                             <div class="text-center">${this.formatNumberCompact(level.big)}</div>
@@ -524,16 +593,16 @@
             renderWarning() {
                 return `
                     <div class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-                        <div class="bg-gray-800 rounded-lg p-6 max-w-md mx-4">
-                            <h3 class="text-xl font-bold text-white mb-4">⚠️ Warning</h3>
-                            <p class="text-gray-200 mb-6">
+                        <div class="bg-stone-900 rounded-lg p-6 max-w-md mx-4">
+                            <h3 class="text-xl font-bold text-stone-100 mb-4">⚠️ Warning</h3>
+                            <p class="text-stone-300 mb-6">
                                 Going to settings will end the current tournament. All progress will be lost.
                             </p>
                             <div class="flex gap-3 justify-end">
-                                <button onclick="app.cancelShowSetup()" class="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded font-semibold">
+                                <button onclick="app.cancelShowSetup()" class="bg-stone-700 hover:bg-stone-600 text-stone-100 px-4 py-2 rounded font-semibold">
                                     Cancel
                                 </button>
-                                <button onclick="app.confirmShowSetup()" class="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded font-semibold">
+                                <button onclick="app.confirmShowSetup()" class="bg-stone-700 hover:bg-stone-600 text-stone-100 px-4 py-2 rounded font-semibold">
                                     End Tournament
                                 </button>
                             </div>
