@@ -1,0 +1,1711 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premium Poker Tournament Timer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* ===== CSS CUSTOM PROPERTIES (THEME) ===== */
+        :root {
+            /* Colors - Premium Poker Felt */
+            --color-bg-darkest: #0a0f0f;
+            --color-bg-dark: #0f1616;
+            --color-bg-canvas: #132020;
+            --color-bg-card: #1a2828;
+            --color-bg-card-light: #1e3030;
+            
+            --color-felt-dark: #1e5245;
+            --color-felt: #266b54;
+            --color-felt-light: #2e7d62;
+            --color-felt-subtle: #2a3d3a;
+            
+            --color-gold: #fbbf24;
+            --color-gold-light: #fcd34d;
+            --color-gold-dark: #d97706;
+            --color-gold-darker: #b45309;
+            
+            --color-red: #ef4444;
+            --color-red-dark: #dc2626;
+            --color-red-glow: rgba(239, 68, 68, 0.4);
+            
+            --color-emerald: #10b981;
+            --color-emerald-light: #34d399;
+            
+            --color-text-primary: #f8fafc;
+            --color-text-secondary: #cbd5e1;
+            --color-text-muted: #64748b;
+            --color-border: #334155;
+            --color-border-light: #475569;
+            
+            /* Spacing - scaled down by 0.75x */
+            --space-xs: 0.375rem;
+            --space-sm: 0.75rem;
+            --space-md: 1.125rem;
+            --space-lg: 1.5rem;
+            --space-xl: 2.25rem;
+            --space-2xl: 3rem;
+            
+            /* Shadows */
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+            --shadow-xl: 0 12px 48px rgba(0, 0, 0, 0.6);
+            --shadow-glow-gold: 0 0 24px rgba(251, 191, 36, 0.4);
+            --shadow-glow-gold-strong: 0 0 40px rgba(251, 191, 36, 0.6);
+            --shadow-glow-red: 0 0 32px rgba(239, 68, 68, 0.5);
+            
+            /* Transitions */
+            --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-base: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+            --transition-bounce: 500ms cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        
+        /* ===== RESET & BASE ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, var(--color-bg-darkest) 0%, var(--color-bg-dark) 50%, var(--color-bg-canvas) 100%);
+            color: var(--color-text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 20% 80%, rgba(30, 82, 69, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(30, 82, 69, 0.1) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        /* ===== TYPOGRAPHY ===== */
+        .text-number {
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            font-variant-numeric: tabular-nums;
+        }
+        
+        /* ===== LAYOUT ===== */
+        .app-container {
+            position: relative;
+            z-index: 1;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: var(--space-lg);
+        }
+        
+        /* ===== COMPONENTS ===== */
+        .card {
+            background: linear-gradient(135deg, var(--color-bg-card) 0%, var(--color-bg-canvas) 100%);
+            border-radius: 0.75rem;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: var(--shadow-md);
+            backdrop-filter: blur(10px);
+            transition: transform var(--transition-base), box-shadow var(--transition-base);
+        }
+        
+        /* ===== BUTTONS ===== */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.375rem;
+            padding: 0.5625rem 1.125rem;
+            border: none;
+            border-radius: 0.5625rem;
+            font-family: 'Inter', sans-serif;
+            font-weight: 600;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all var(--transition-base);
+            position: relative;
+            overflow: hidden;
+            outline: none;
+        }
+        
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+        
+        .btn:not(:disabled):hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn:not(:disabled):active {
+            transform: translateY(0) scale(0.98);
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, var(--color-gold) 0%, var(--color-gold-dark) 100%);
+            color: var(--color-bg-darkest);
+            box-shadow: var(--shadow-glow-gold);
+        }
+        
+        .btn-primary:not(:disabled):hover {
+            box-shadow: var(--shadow-glow-gold-strong);
+            background: linear-gradient(135deg, var(--color-gold-light) 0%, var(--color-gold) 100%);
+        }
+        
+        .btn-secondary {
+            background: linear-gradient(135deg, var(--color-felt-dark) 0%, var(--color-felt) 100%);
+            color: var(--color-text-primary);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .btn-secondary:not(:disabled):hover {
+            background: linear-gradient(135deg, var(--color-felt) 0%, var(--color-felt-light) 100%);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+        
+        .btn-icon {
+            width: 2.25rem;
+            height: 2.25rem;
+            padding: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--color-text-primary);
+        }
+        
+        .btn-icon svg {
+            transition: transform var(--transition-base);
+        }
+        
+        .btn-icon:not(:disabled):hover svg {
+            transform: scale(1.1);
+        }
+        
+        .btn-large {
+            width: 3rem;
+            height: 3rem;
+            border-radius: 50%;
+        }
+        
+        /* ===== ANIMATIONS ===== */
+        @keyframes pulse-glow {
+            0%, 100% {
+                box-shadow: var(--shadow-glow-gold);
+                transform: scale(1);
+            }
+            50% {
+                box-shadow: var(--shadow-glow-gold-strong);
+                transform: scale(1.02);
+            }
+        }
+        
+        @keyframes pulse-text-glow-red {
+            0%, 100% {
+                text-shadow: 0 0 20px rgba(239, 68, 68, 0.8),
+                             0 0 40px rgba(239, 68, 68, 0.6),
+                             0 0 60px rgba(239, 68, 68, 0.4);
+            }
+            50% {
+                text-shadow: 0 0 30px rgba(239, 68, 68, 1),
+                             0 0 60px rgba(239, 68, 68, 0.8),
+                             0 0 90px rgba(239, 68, 68, 0.6);
+            }
+        }
+        
+        @keyframes slide-in {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes fade-in {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes scale-in {
+            from {
+                opacity: 0;
+                transform: scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+        
+        @keyframes flip-in {
+            from {
+                transform: perspective(400px) rotateY(90deg);
+                opacity: 0;
+            }
+            to {
+                transform: perspective(400px) rotateY(0);
+                opacity: 1;
+            }
+        }
+        
+        @keyframes confetti-fall {
+            0% {
+                transform: translateY(-100vh) rotate(0deg);
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(100vh) rotate(720deg);
+                opacity: 0;
+            }
+        }
+        
+        .animate-slide-in {
+            animation: slide-in var(--transition-slow) ease-out;
+        }
+        
+        .animate-fade-in {
+            animation: fade-in var(--transition-base) ease-out;
+        }
+        
+        .animate-scale-in {
+            animation: scale-in var(--transition-base) ease-out;
+        }
+        
+        /* ===== HEADER ===== */
+        .header {
+            display: flex;
+            align-items: center;
+            gap: var(--space-md);
+            margin-bottom: var(--space-lg);
+        }
+        
+        .payout-ticker {
+            flex: 1;
+            background: linear-gradient(90deg, rgba(30, 82, 69, 0.4) 0%, rgba(30, 82, 69, 0.2) 100%);
+            border: 1px solid rgba(251, 191, 36, 0.2);
+            border-radius: 0.5625rem;
+            padding: var(--space-sm) var(--space-md);
+            text-align: center;
+            color: var(--color-gold);
+            font-weight: 600;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            white-space: nowrap;
+        }
+        
+        .settings-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+        
+        /* ===== STATS ROW ===== */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: var(--space-lg);
+            margin-bottom: var(--space-lg);
+        }
+        
+        .stat-card {
+            padding: var(--space-lg);
+            text-align: center;
+        }
+        
+        .stat-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.375rem;
+            margin-bottom: var(--space-sm);
+            color: var(--color-text-secondary);
+            font-weight: 600;
+            font-size: 0.84375rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .stat-card-value {
+            font-size: 2.625rem;
+            font-weight: 800;
+            color: var(--color-gold);
+            margin-bottom: var(--space-sm);
+            text-shadow: 0 0 20px rgba(251, 191, 36, 0.3);
+        }
+        
+        .stat-card-controls {
+            display: flex;
+            justify-content: center;
+            gap: var(--space-sm);
+        }
+        
+        .stat-card-secondary {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-xs);
+        }
+        
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: var(--space-xs) 0;
+        }
+        
+        .stat-label {
+            color: var(--color-text-secondary);
+            font-size: 0.65625rem;
+            font-weight: 600;
+        }
+        
+        .stat-value {
+            font-weight: 700;
+            font-size: 1.125rem;
+            color: var(--color-gold);
+        }
+        
+        .stat-divider {
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--color-border), transparent);
+            margin: var(--space-sm) 0;
+        }
+        
+        /* ===== GAME LAYOUT ===== */
+        .game-layout {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: var(--space-lg);
+        }
+        
+        /* ===== TIMER SECTION ===== */
+        .timer-section {
+            padding: var(--space-xl);
+        }
+        
+        .level-header {
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: var(--space-lg);
+            color: var(--color-gold);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            text-shadow: 0 0 20px rgba(251, 191, 36, 0.3);
+        }
+        
+        .blinds-display {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: var(--space-md);
+            max-width: 450px;
+            margin: 0 auto var(--space-xl);
+        }
+        
+        .blind-card {
+            background: linear-gradient(135deg, var(--color-felt-dark) 0%, var(--color-felt) 100%);
+            border: 2px solid var(--color-gold);
+            border-radius: 0.75rem;
+            padding: var(--space-lg);
+            text-align: center;
+            box-shadow: var(--shadow-lg), inset 0 2px 4px rgba(255, 255, 255, 0.1);
+            transform: perspective(400px) rotateY(0deg);
+            transition: all var(--transition-slow);
+        }
+        
+        .blind-card:hover {
+            transform: perspective(400px) rotateY(-2deg) translateY(-4px);
+            box-shadow: var(--shadow-xl), inset 0 2px 4px rgba(255, 255, 255, 0.1);
+        }
+        
+        .blind-label {
+            font-size: 0.65625rem;
+            font-weight: 700;
+            color: var(--color-text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: var(--space-sm);
+        }
+        
+        .blind-value {
+            font-size: 2.25rem;
+            font-weight: 800;
+            color: var(--color-text-primary);
+            text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+        }
+        
+        .timer-display {
+            text-align: center;
+            margin-bottom: var(--space-lg);
+        }
+        
+        .timer-number {
+            font-size: 5.25rem;
+            font-weight: 800;
+            color: var(--color-gold);
+            line-height: 1;
+            text-shadow: 0 0 24px rgba(251, 191, 36, 0.4);
+            transition: all var(--transition-base);
+        }
+        
+        .timer-number.warning {
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+        
+        .timer-number.critical {
+            color: var(--color-red);
+            animation: pulse-text-glow-red 1s ease-in-out infinite;
+        }
+        
+        .timer-status {
+            font-size: 0.9375rem;
+            color: var(--color-gold);
+            margin-top: var(--space-sm);
+            font-weight: 600;
+        }
+        
+        .progress-bar-container {
+            width: 100%;
+            height: 1.125rem;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 0.75rem;
+            overflow: hidden;
+            margin-bottom: var(--space-lg);
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--color-gold-dark) 0%, var(--color-gold) 50%, var(--color-gold-light) 100%);
+            border-radius: 0.75rem;
+            transition: width 1s linear, background var(--transition-base);
+            box-shadow: 0 0 12px rgba(251, 191, 36, 0.5);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        
+        .progress-bar.warning {
+            background: linear-gradient(90deg, var(--color-gold-dark) 0%, var(--color-gold) 100%);
+        }
+        
+        .progress-bar.critical {
+            background: linear-gradient(90deg, var(--color-red-dark) 0%, var(--color-red) 100%);
+            box-shadow: 0 0 16px var(--color-red-glow);
+        }
+        
+        .timer-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: var(--space-sm);
+        }
+        
+        /* ===== BLIND STRUCTURE ===== */
+        .structure-section {
+            padding: var(--space-lg);
+            max-height: none;
+            overflow-y: visible;
+        }
+        
+        .structure-section::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .structure-section::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 3px;
+        }
+        
+        .structure-section::-webkit-scrollbar-thumb {
+            background: var(--color-felt);
+            border-radius: 3px;
+        }
+        
+        .structure-title {
+            text-align: center;
+            font-size: 0.9375rem;
+            font-weight: 700;
+            margin-bottom: var(--space-md);
+            color: var(--color-text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .structure-table {
+            width: 100%;
+        }
+        
+        .structure-header {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: var(--space-xs);
+            padding: var(--space-sm);
+            border-bottom: 2px solid var(--color-border);
+            font-weight: 700;
+            font-size: 0.65625rem;
+            color: var(--color-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .structure-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: var(--space-xs);
+            padding: var(--space-sm);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all var(--transition-fast);
+            border-radius: 0.375rem;
+            font-size: 0.84375rem;
+        }
+        
+        .structure-row:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+        
+        .structure-row.current {
+            background: linear-gradient(90deg, rgba(251, 191, 36, 0.2) 0%, rgba(251, 191, 36, 0.1) 100%);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            font-weight: 700;
+            color: var(--color-gold);
+        }
+        
+        .structure-row.past {
+            opacity: 0.4;
+        }
+        
+        .structure-cell {
+            text-align: center;
+        }
+        
+        /* ===== SETUP SCREENS ===== */
+        .setup-container {
+            max-width: 525px;
+            margin: 0 auto;
+            padding: var(--space-xl);
+        }
+        
+        .setup-header {
+            text-align: center;
+            margin-bottom: var(--space-xl);
+        }
+        
+        .setup-title {
+            font-size: 1.875rem;
+            font-weight: 800;
+            color: var(--color-gold);
+            margin-bottom: var(--space-sm);
+            text-shadow: 0 0 24px rgba(251, 191, 36, 0.3);
+        }
+        
+        .setup-subtitle {
+            font-size: 0.84375rem;
+            color: var(--color-text-muted);
+        }
+        
+        .setup-card {
+            padding: var(--space-xl);
+        }
+        
+        .setup-group {
+            margin-bottom: var(--space-xl);
+        }
+        
+        .setup-label {
+            display: block;
+            font-size: 0.84375rem;
+            font-weight: 600;
+            margin-bottom: var(--space-sm);
+            color: var(--color-text-secondary);
+        }
+        
+        .setup-control {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-md);
+        }
+        
+        .setup-value {
+            background: rgba(0, 0, 0, 0.3);
+            padding: var(--space-sm) var(--space-lg);
+            border-radius: 0.5625rem;
+            font-size: 1.125rem;
+            font-weight: 700;
+            min-width: 90px;
+            text-align: center;
+            color: var(--color-gold);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .setup-info {
+            background: rgba(30, 82, 69, 0.2);
+            border: 1px solid rgba(30, 82, 69, 0.3);
+            border-radius: 0.5625rem;
+            padding: var(--space-md);
+            text-align: center;
+        }
+        
+        .setup-info-highlight {
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(217, 119, 6, 0.2) 100%);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+        }
+        
+        .setup-buttons {
+            display: flex;
+            gap: var(--space-md);
+            margin-top: var(--space-xl);
+        }
+        
+        .setup-input {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.5625rem;
+            padding: var(--space-sm) var(--space-md);
+            color: var(--color-text-primary);
+            font-size: 0.84375rem;
+            font-weight: 700;
+            text-align: center;
+            flex: 1;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        .setup-select {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.5625rem;
+            padding: var(--space-sm) var(--space-md);
+            color: var(--color-text-primary);
+            font-size: 0.84375rem;
+            font-weight: 600;
+        }
+        
+        /* ===== MODAL/WARNING ===== */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            animation: fade-in var(--transition-base) ease-out;
+        }
+        
+        .modal-content {
+            background: linear-gradient(135deg, var(--color-bg-card) 0%, var(--color-bg-canvas) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0.75rem;
+            padding: var(--space-xl);
+            max-width: 375px;
+            margin: var(--space-md);
+            box-shadow: var(--shadow-xl);
+            animation: scale-in var(--transition-slow) ease-out;
+        }
+        
+        .modal-title {
+            font-size: 1.125rem;
+            font-weight: 700;
+            margin-bottom: var(--space-md);
+            color: var(--color-gold);
+        }
+        
+        .modal-text {
+            color: var(--color-text-secondary);
+            margin-bottom: var(--space-lg);
+            line-height: 1.6;
+        }
+        
+        .modal-buttons {
+            display: flex;
+            gap: var(--space-sm);
+            justify-content: flex-end;
+        }
+        
+        /* ===== STATUS BADGE ===== */
+        .status-badge {
+            position: absolute;
+            top: var(--space-md);
+            right: var(--space-md);
+            padding: 0.375rem 0.75rem;
+            border-radius: 1.5rem;
+            font-size: 0.65625rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.375rem;
+            animation: fade-in var(--transition-base) ease-out;
+        }
+        
+        .status-badge.running {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid var(--color-emerald);
+            color: var(--color-emerald);
+        }
+        
+        .status-badge.paused {
+            background: rgba(251, 191, 36, 0.2);
+            border: 1px solid var(--color-gold);
+            color: var(--color-gold);
+        }
+        
+        .status-indicator {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* ===== CONFETTI ===== */
+        .confetti {
+            position: fixed;
+            width: 10px;
+            height: 10px;
+            pointer-events: none;
+            z-index: 9999;
+        }
+        
+        /* ===== FULLSCREEN CONTROLS ===== */
+        .fullscreen-controls {
+            display: flex;
+            gap: var(--space-sm);
+        }
+        
+        /* ===== SOUND TOGGLE ===== */
+        .sound-indicator {
+            transition: transform var(--transition-base);
+        }
+        
+        .sound-indicator.muted {
+            opacity: 0.5;
+        }
+        
+        /* ===== UTILITY CLASSES ===== */
+        .flex-1 { flex: 1; }
+        .text-center { text-align: center; }
+        .hidden { display: none; }
+        
+        /* ===== KEYBOARD HINTS ===== */
+        .keyboard-hint {
+            position: fixed;
+            bottom: var(--space-md);
+            right: var(--space-md);
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            padding: var(--space-sm) var(--space-md);
+            border-radius: 0.375rem;
+            font-size: 0.5625rem;
+            color: var(--color-text-muted);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            opacity: 0;
+            transition: opacity var(--transition-base);
+            pointer-events: none;
+            z-index: 100;
+        }
+        
+        .keyboard-hint.show {
+            opacity: 1;
+        }
+        
+        .kbd {
+            display: inline-block;
+            padding: 0.09375rem 0.28125rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 0.1875rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.5625rem;
+            font-weight: 700;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+    
+    <div class="keyboard-hint" id="keyboardHint">
+        <kbd>SPACE</kbd> Play/Pause • <kbd>←</kbd> Prev Level • <kbd>→</kbd> Next Level • <kbd>BACKSPACE</kbd> Player Out • <kbd>F</kbd> Fullscreen
+    </div>
+
+    <script>
+        // SVG Icons
+        const icons = {
+            Play: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,3 19,12 5,21"></polygon></svg>`,
+            Pause: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`,
+            RotateCcw: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>`,
+            SkipForward: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,4 15,12 5,20"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>`,
+            SkipBack: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="19,20 9,12 19,4"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>`,
+            Settings: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`,
+            Minus: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>`,
+            Plus: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`,
+            Users: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>`,
+            Volume2: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`,
+            VolumeX: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>`,
+            Maximize: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>`,
+            Minimize: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path></svg>`
+        };
+
+        class PokerTimer {
+            constructor() {
+                this.blindLevels = [
+                    { level: 1, small: 200, big: 400 },
+                    { level: 2, small: 300, big: 600 },
+                    { level: 3, small: 500, big: 1000 },
+                    { level: 4, small: 800, big: 1600 },
+                    { level: 5, small: 1200, big: 2400 },
+                    { level: 6, small: 1800, big: 3600 },
+                    { level: 7, small: 2500, big: 5000 },
+                    { level: 8, small: 3500, big: 7000 },
+                    { level: 9, small: 5000, big: 10000 },
+                    { level: 10, small: 7000, big: 14000 },
+                    { level: 11, small: 10000, big: 20000 },
+                    { level: 12, small: 15000, big: 30000 },
+                ];
+
+                this.showSetup = true;
+                this.showPayouts = false;
+                this.showWarning = false;
+                this.setupData = {
+                    totalPlayers: 7,
+                    levelDuration: 25,
+                    startingStack: 100000,
+                    buyIn: 2000
+                };
+                this.payouts = [];
+                this.placesPaid = 3;
+                this.currentLevel = 0;
+                this.playersRemaining = 7;
+                this.timeLeft = 25 * 60;
+                this.isRunning = false;
+                this.isExtended = false;
+                this.totalTime = 25 * 60;
+                this.timerInterval = null;
+                this.soundEnabled = true;
+                this.isFullscreen = false;
+                this.audioContextInitialized = false;
+
+                this.setupKeyboardShortcuts();
+                this.setupFullscreenListener();
+                this.render();
+                this.startTimer();
+                
+                setTimeout(() => {
+                    const hint = document.getElementById('keyboardHint');
+                    if (hint) {
+                        hint.classList.add('show');
+                        setTimeout(() => hint.classList.remove('show'), 5000);
+                    }
+                }, 1000);
+            }
+
+            setupKeyboardShortcuts() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+                    
+                    if (e.code === 'Space') {
+                        e.preventDefault();
+                        if (!this.showSetup && !this.showPayouts && this.currentLevel < this.blindLevels.length - 1) {
+                            this.toggleTimer();
+                        }
+                    }
+                    
+                    if (e.code === 'Backspace') {
+                        e.preventDefault();
+                        if (!this.showSetup && !this.showPayouts) {
+                            this.eliminatePlayer();
+                        }
+                    }
+                    
+                    if (e.code === 'ArrowLeft') {
+                        e.preventDefault();
+                        if (!this.showSetup && !this.showPayouts) {
+                            this.prevLevel();
+                        }
+                    }
+                    
+                    if (e.code === 'ArrowRight') {
+                        e.preventDefault();
+                        if (!this.showSetup && !this.showPayouts) {
+                            this.nextLevel();
+                        }
+                    }
+                    
+                    if (e.code === 'KeyF') {
+                        e.preventDefault();
+                        this.toggleFullscreen();
+                    }
+                });
+            }
+
+            setupFullscreenListener() {
+                document.addEventListener('fullscreenchange', () => {
+                    this.isFullscreen = !!document.fullscreenElement;
+                    this.render();
+                });
+            }
+
+            toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => {
+                        console.log('Fullscreen error:', err);
+                    });
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+
+            startTimer() {
+                if (this.timerInterval) clearInterval(this.timerInterval);
+                
+                this.timerInterval = setInterval(() => {
+                    const isLastLevel = this.currentLevel === this.blindLevels.length - 1;
+                    
+                    if (this.isRunning && this.timeLeft > 0 && !isLastLevel) {
+                        this.timeLeft--;
+                        
+                        if (this.timeLeft === 60 && !this.isExtended) {
+                            this.playWarningSound();
+                        }
+                        
+                        this.render();
+                    } else if (this.timeLeft === 0 && this.isRunning && !this.isExtended && !isLastLevel) {
+                        if (this.currentLevel < this.blindLevels.length - 1) {
+                            this.currentLevel++;
+                            this.timeLeft = this.totalTime;
+                            this.isExtended = false;
+                            this.playLevelEndSound();
+                            this.triggerLevelChange();
+                            this.render();
+                        } else {
+                            this.isRunning = false;
+                            this.render();
+                        }
+                    }
+                }, 1000);
+            }
+
+            triggerLevelChange() {
+                const blindCards = document.querySelectorAll('.blind-card');
+                blindCards.forEach(card => {
+                    card.style.animation = 'none';
+                    setTimeout(() => {
+                        card.style.animation = 'flip-in 0.6s ease-out';
+                    }, 10);
+                });
+            }
+
+            playWarningSound() {
+                if (!this.soundEnabled) return;
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    // Create 3 layered oscillators for more intensity
+                    for (let i = 0; i < 3; i++) {
+                        const oscillator = audioContext.createOscillator();
+                        const gainNode = audioContext.createGain();
+                        
+                        oscillator.connect(gainNode);
+                        gainNode.connect(audioContext.destination);
+                        
+                        oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
+                        oscillator.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.3);
+                        oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.6);
+                        oscillator.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.9);
+                        oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 1.2);
+                        oscillator.type = 'sine';
+                        
+                        gainNode.gain.setValueAtTime(0.8, audioContext.currentTime);
+                        gainNode.gain.setValueAtTime(0.8, audioContext.currentTime + 1.2);
+                        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 1.25);
+                        
+                        oscillator.start(audioContext.currentTime);
+                        oscillator.stop(audioContext.currentTime + 1.25);
+                    }
+                    
+                    setTimeout(() => audioContext.close(), 1500);
+                } catch (e) {
+                    console.log('Could not play warning sound:', e);
+                }
+            }
+
+            playLevelEndSound() {
+                if (!this.soundEnabled) return;
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const beepTimes = [0, 0.15, 0.3, 0.45];
+                    
+                    beepTimes.forEach((startTime) => {
+                        // Create 3 layered oscillators per beep for more intensity
+                        for (let i = 0; i < 3; i++) {
+                            const oscillator = audioContext.createOscillator();
+                            const gainNode = audioContext.createGain();
+                            
+                            oscillator.connect(gainNode);
+                            gainNode.connect(audioContext.destination);
+                            
+                            oscillator.frequency.value = 880;
+                            oscillator.type = 'sine';
+                            
+                            const beepStart = audioContext.currentTime + startTime;
+                            const beepEnd = beepStart + 0.1;
+                            
+                            gainNode.gain.setValueAtTime(0, beepStart);
+                            gainNode.gain.linearRampToValueAtTime(0.8, beepStart + 0.005);
+                            gainNode.gain.exponentialRampToValueAtTime(0.01, beepEnd);
+                            
+                            oscillator.start(beepStart);
+                            oscillator.stop(beepEnd);
+                        }
+                    });
+                    
+                    setTimeout(() => audioContext.close(), 1500);
+                } catch (e) {
+                    console.log('Could not play level end sound:', e);
+                }
+            }
+
+            createConfetti() {
+                const colors = ['#fbbf24', '#10b981', '#ef4444', '#3b82f6', '#ec4899'];
+                for (let i = 0; i < 50; i++) {
+                    const confetti = document.createElement('div');
+                    confetti.className = 'confetti';
+                    confetti.style.left = Math.random() * 100 + '%';
+                    confetti.style.top = '-10px';
+                    confetti.style.background = colors[Math.floor(Math.random() * colors.length)];
+                    confetti.style.animation = `confetti-fall ${2 + Math.random() * 2}s linear forwards`;
+                    confetti.style.animationDelay = Math.random() * 0.5 + 's';
+                    document.body.appendChild(confetti);
+                    
+                    setTimeout(() => confetti.remove(), 4500);
+                }
+            }
+
+            formatTime(seconds) {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }
+
+            formatNumber(num) {
+                return num.toLocaleString();
+            }
+
+            formatNumberCompact(num) {
+                if (num >= 1000000) {
+                    return (num / 1000000).toFixed(num % 1000000 === 0 ? 0 : 1) + 'M';
+                } else if (num >= 1000) {
+                    return (num / 1000).toFixed(num % 1000 === 0 ? 0 : 1) + 'k';
+                }
+                return num.toString();
+            }
+
+            getOrdinal(num) {
+                const suffixes = ['th', 'st', 'nd', 'rd'];
+                const v = num % 100;
+                return num + (suffixes[(v - 20) % 10] || suffixes[v] || suffixes[0]);
+            }
+
+            getPayoutTickerContent() {
+                const medals = ['🥇', '🥈', '🥉'];
+                return this.payouts.map((amount, index) => {
+                    const medal = index < 3 ? medals[index] + ' ' : '';
+                    return `${medal}${this.getOrdinal(index + 1)}: ${this.formatNumber(amount)} THB`;
+                }).join(' • ');
+            }
+
+            isGameInProgress() {
+                return this.currentLevel > 0 || 
+                       this.playersRemaining < this.setupData.totalPlayers || 
+                       this.timeLeft < this.totalTime || 
+                       this.isRunning;
+            }
+
+            render() {
+                const app = document.getElementById('app');
+                
+                if (this.showSetup) {
+                    app.innerHTML = this.renderSetup();
+                } else if (this.showPayouts) {
+                    app.innerHTML = this.renderPayouts();
+                } else if (this.showWarning) {
+                    app.innerHTML = this.renderGame() + this.renderWarning();
+                } else {
+                    app.innerHTML = this.renderGame();
+                }
+            }
+
+            renderSetup() {
+                const startingBB = Math.round(this.setupData.startingStack / 400);
+                const totalPrizePool = this.setupData.totalPlayers * this.setupData.buyIn;
+                
+                return `
+                    <div class="app-container setup-container animate-slide-in">
+                        <div class="setup-header">
+                            <h1 class="setup-title">Tournament Setup</h1>
+                            <p class="setup-subtitle">Configure your poker game settings</p>
+                        </div>
+
+                        <div class="card setup-card">
+                            <div class="setup-group">
+                                <label class="setup-label">Number of Players</label>
+                                <div class="setup-control">
+                                    <button class="btn btn-icon" onclick="app.adjustPlayers(-1)">
+                                        ${icons.Minus}
+                                    </button>
+                                    <div class="setup-value text-number">${this.setupData.totalPlayers}</div>
+                                    <button class="btn btn-icon" onclick="app.adjustPlayers(1)">
+                                        ${icons.Plus}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="setup-group">
+                                <label class="setup-label">Buy-in Amount (THB)</label>
+                                <div class="setup-control">
+                                    <button class="btn btn-icon" onclick="app.adjustBuyIn(-100)">
+                                        ${icons.Minus}
+                                    </button>
+                                    <div class="setup-value text-number">${this.formatNumber(this.setupData.buyIn)}</div>
+                                    <button class="btn btn-icon" onclick="app.adjustBuyIn(100)">
+                                        ${icons.Plus}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="setup-group">
+                                <label class="setup-label">Level Duration (minutes)</label>
+                                <div class="setup-control">
+                                    <button class="btn btn-icon" onclick="app.adjustDuration(-1)">
+                                        ${icons.Minus}
+                                    </button>
+                                    <div class="setup-value text-number">${this.setupData.levelDuration}</div>
+                                    <button class="btn btn-icon" onclick="app.adjustDuration(1)">
+                                        ${icons.Plus}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="setup-group">
+                                <label class="setup-label">Starting Stack</label>
+                                <div class="setup-control">
+                                    <button class="btn btn-icon" onclick="app.adjustStack(-5000)">
+                                        ${icons.Minus}
+                                    </button>
+                                    <div class="setup-value text-number">${this.formatNumber(this.setupData.startingStack)}</div>
+                                    <button class="btn btn-icon" onclick="app.adjustStack(5000)">
+                                        ${icons.Plus}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="setup-info">
+                                <div style="font-size: 0.84375rem; margin-bottom: 0.375rem;">
+                                    Starting Stack: <strong class="text-number" style="color: var(--color-gold)">${startingBB} Big Blinds</strong>
+                                </div>
+                                <div style="font-size: 0.65625rem; color: var(--color-text-muted);">
+                                    ${this.formatNumber(this.setupData.startingStack)} chips ÷ 400 BB
+                                </div>
+                            </div>
+
+                            <div class="setup-info setup-info-highlight">
+                                <div style="font-size: 0.9375rem; font-weight: 700; color: var(--color-gold);">
+                                    Total Prize Pool: ${this.formatNumber(totalPrizePool)} THB
+                                </div>
+                                <div style="font-size: 0.65625rem; color: var(--color-gold); margin-top: 0.1875rem;">
+                                    ${this.setupData.totalPlayers} players × ${this.formatNumber(this.setupData.buyIn)} THB
+                                </div>
+                            </div>
+
+                            <button onclick="app.goToPayouts()" class="btn btn-primary" style="width: 100%; margin-top: var(--space-lg); padding: 0.9375rem; font-size: 0.84375rem;">
+                                Next: Setup Payouts
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderPayouts() {
+                const totalPrizePool = this.setupData.totalPlayers * this.setupData.buyIn;
+                const currentTotal = this.payouts.reduce((sum, payout) => sum + (payout || 0), 0);
+                const isValidTotal = currentTotal === totalPrizePool;
+                const remaining = totalPrizePool - currentTotal;
+
+                return `
+                    <div class="app-container setup-container animate-slide-in">
+                        <div class="setup-header">
+                            <h1 class="setup-title">Prize Distribution</h1>
+                            <p class="setup-subtitle">Configure payout structure</p>
+                        </div>
+
+                        <div class="card setup-card">
+                            <div class="setup-info setup-info-highlight" style="margin-bottom: var(--space-xl);">
+                                <div style="font-size: 1.125rem; font-weight: 700; color: var(--color-gold);">
+                                    Total Prize Pool: ${this.formatNumber(totalPrizePool)} THB
+                                </div>
+                            </div>
+
+                            <div class="setup-group">
+                                <label class="setup-label">Places Paid</label>
+                                <div style="display: flex; justify-content: center;">
+                                    <select onchange="app.updatePlacesPaid(this.value)" class="setup-select">
+                                        ${[1,2,3,4,5].map(i => `<option value="${i}" ${i === this.placesPaid ? 'selected' : ''}>${i}</option>`).join('')}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style="margin-bottom: var(--space-lg);">
+                                ${Array.from({length: this.placesPaid}, (_, i) => `
+                                    <div class="setup-group">
+                                        <label class="setup-label">${this.getOrdinal(i + 1)} Place</label>
+                                        <div class="setup-control">
+                                            <button class="btn btn-icon" onclick="app.adjustPayout(${i}, -1000)">
+                                                ${icons.Minus}
+                                            </button>
+                                            <input 
+                                                type="number" 
+                                                value="${this.payouts[i] || ''}" 
+                                                onchange="app.updatePayout(${i}, this.value)"
+                                                class="setup-input"
+                                                placeholder="0"
+                                            >
+                                            <button class="btn btn-icon" onclick="app.adjustPayout(${i}, 1000)">
+                                                ${icons.Plus}
+                                            </button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+
+                            <div class="setup-info" style="margin-bottom: var(--space-lg);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.375rem;">
+                                    <span style="font-size: 0.84375rem;">Total Payouts:</span>
+                                    <span class="text-number" style="font-size: 0.9375rem; font-weight: 700; color: ${isValidTotal ? 'var(--color-gold)' : 'var(--color-text-secondary)'};">
+                                        ${this.formatNumber(currentTotal)} THB
+                                    </span>
+                                </div>
+                                ${!isValidTotal ? `
+                                    <div style="text-align: center; font-size: 0.65625rem; color: ${remaining > 0 ? 'var(--color-gold)' : 'var(--color-red)'};">
+                                        ${remaining > 0 ? `Remaining: ${this.formatNumber(remaining)} THB` : `Over by: ${this.formatNumber(Math.abs(remaining))} THB`}
+                                    </div>
+                                ` : '<div style="text-align: center; font-size: 0.65625rem; color: var(--color-emerald);">✓ Payouts match prize pool</div>'}
+                            </div>
+
+                            <div class="setup-buttons">
+                                <button onclick="app.backToSetup()" class="btn btn-secondary flex-1" style="padding: 0.9375rem;">
+                                    Back
+                                </button>
+                                <button onclick="app.startTournament()" ${!isValidTotal ? 'disabled' : ''} class="btn btn-primary flex-1" style="padding: 0.9375rem;">
+                                    Start Tournament
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderGame() {
+                const currentBlinds = this.blindLevels[this.currentLevel];
+                
+                let progressPercent;
+                if (this.isExtended) {
+                    progressPercent = 100;
+                } else if (this.timeLeft > this.totalTime) {
+                    progressPercent = 0;
+                } else {
+                    progressPercent = ((this.totalTime - this.timeLeft) / this.totalTime) * 100;
+                }
+                
+                const totalChips = this.setupData.totalPlayers * this.setupData.startingStack;
+                const averageStack = Math.round(totalChips / this.playersRemaining);
+                const averageBigBlinds = Math.round(averageStack / currentBlinds.big);
+
+                const timerClass = this.isExtended 
+                    ? '' 
+                    : this.currentLevel === this.blindLevels.length - 1
+                        ? ''
+                        : this.timeLeft <= 60 
+                            ? 'critical'
+                            : '';
+
+                const progressClass = this.isExtended 
+                    ? '' 
+                    : this.currentLevel === this.blindLevels.length - 1
+                        ? ''
+                        : this.timeLeft <= 60 
+                            ? 'critical'
+                            : '';
+
+                const isWinner = this.playersRemaining === 1;
+
+                return `
+                    <div class="app-container animate-fade-in">
+                        ${isWinner ? '<div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 3rem; font-weight: 800; color: var(--color-gold); text-shadow: 0 0 40px rgba(251, 191, 36, 0.6); z-index: 999; animation: scale-in 0.5s ease-out;">🏆 WINNER! 🏆</div>' : ''}
+                        
+                        <div class="header">
+                            <div class="payout-ticker">
+                                ${this.getPayoutTickerContent()}
+                            </div>
+                            
+                            <div class="fullscreen-controls">
+                                <button onclick="app.toggleSound()" class="btn btn-secondary" title="Toggle Sound">
+                                    <div class="sound-indicator ${this.soundEnabled ? '' : 'muted'}">
+                                        ${this.soundEnabled ? icons.Volume2 : icons.VolumeX}
+                                    </div>
+                                </button>
+                                
+                                <button onclick="app.toggleFullscreen()" class="btn btn-secondary" title="Fullscreen (F)">
+                                    ${this.isFullscreen ? icons.Minimize : icons.Maximize}
+                                </button>
+                                
+                                <button onclick="app.showSettingsMenu()" class="btn btn-secondary settings-btn">
+                                    ${icons.Settings}
+                                    <span>Settings</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="stats-row">
+                            <div class="card stat-card">
+                                <div class="stat-card-header">
+                                    ${icons.Users}
+                                    Players Remaining
+                                </div>
+                                <div class="stat-card-value text-number">${this.playersRemaining}</div>
+                                <div class="stat-card-controls">
+                                    <button onclick="app.eliminatePlayer()" ${this.playersRemaining <= 1 ? 'disabled' : ''} 
+                                        class="btn btn-secondary" style="padding: 0.5625rem 1.125rem;">
+                                        OUT
+                                    </button>
+                                    <button onclick="app.addPlayer()" ${this.playersRemaining >= this.setupData.totalPlayers ? 'disabled' : ''} 
+                                        class="btn btn-icon" title="Undo elimination">
+                                        ${icons.RotateCcw}
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div class="card stat-card">
+                                <div class="stat-card-header">Average Stack</div>
+                                <div class="stat-card-secondary">
+                                    <div class="stat-row">
+                                        <span class="stat-label">Chips</span>
+                                        <span class="stat-value text-number">${this.formatNumberCompact(averageStack)}</span>
+                                    </div>
+                                    <div class="stat-divider"></div>
+                                    <div class="stat-row">
+                                        <span class="stat-label">Big Blinds</span>
+                                        <span class="stat-value text-number">${averageBigBlinds}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="game-layout">
+                            <div class="card timer-section" style="position: relative;">
+                                ${this.isRunning ? '<div class="status-badge running"><div class="status-indicator"></div>RUNNING</div>' : 
+                                  !this.isExtended && this.currentLevel < this.blindLevels.length - 1 ? '<div class="status-badge paused"><div class="status-indicator"></div>PAUSED</div>' : ''}
+                                
+                                <h2 class="level-header">LEVEL ${currentBlinds.level}</h2>
+                                
+                                <div class="blinds-display">
+                                    <div class="blind-card">
+                                        <div class="blind-label">Small Blind</div>
+                                        <div class="blind-value text-number">${this.formatNumber(currentBlinds.small)}</div>
+                                    </div>
+                                    
+                                    <div class="blind-card">
+                                        <div class="blind-label">Big Blind</div>
+                                        <div class="blind-value text-number">${this.formatNumber(currentBlinds.big)}</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="timer-display">
+                                    <div class="timer-number text-number ${timerClass}">
+                                        ${this.currentLevel === this.blindLevels.length - 1 ? '∞' : 
+                                          this.isExtended ? 'EXTENDED' : this.formatTime(this.timeLeft)}
+                                    </div>
+                                    
+                                    ${this.isExtended ? '<div class="timer-status">Level continues until manually advanced</div>' : ''}
+                                    ${this.currentLevel === this.blindLevels.length - 1 ? '<div class="timer-status">Final Level - No Time Limit</div>' : ''}
+                                </div>
+                                
+                                <div class="progress-bar-container">
+                                    <div class="progress-bar ${progressClass}"
+                                        style="width: ${this.currentLevel === this.blindLevels.length - 1 ? '100' : progressPercent}%;">
+                                    </div>
+                                </div>
+
+                                <div class="timer-controls">
+                                    <button onclick="app.prevLevel()" ${this.currentLevel === 0 ? 'disabled' : ''} 
+                                        class="btn btn-icon" title="Previous Level (←)">
+                                        ${icons.SkipBack}
+                                    </button>
+                                    
+                                    <button onclick="app.toggleTimer()" ${this.currentLevel === this.blindLevels.length - 1 ? 'disabled' : ''} 
+                                        class="btn btn-primary btn-large" title="Play/Pause (SPACE)">
+                                        ${this.isRunning ? icons.Pause : icons.Play}
+                                    </button>
+                                    
+                                    <button onclick="app.addTwoMinutes()" ${this.currentLevel === this.blindLevels.length - 1 ? 'disabled' : ''} 
+                                        class="btn btn-secondary" title="Add 2 minutes">
+                                        +2 min
+                                    </button>
+                                    
+                                    <button onclick="app.toggleExtend()" ${this.currentLevel === this.blindLevels.length - 1 ? 'disabled' : ''} 
+                                        class="btn ${this.isExtended ? 'btn-primary' : 'btn-secondary'}" title="Extend Level">
+                                        ${this.isExtended ? 'Extended' : 'Extend'}
+                                    </button>
+                                    
+                                    <button onclick="app.nextLevel()" ${this.currentLevel === this.blindLevels.length - 1 ? 'disabled' : ''} 
+                                        class="btn btn-icon" title="Next Level (→)">
+                                        ${icons.SkipForward}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="card structure-section">
+                                <div class="structure-table">
+                                    <div class="structure-header">
+                                        <div class="structure-cell">Level</div>
+                                        <div class="structure-cell">SB</div>
+                                        <div class="structure-cell">BB</div>
+                                    </div>
+                                    
+                                    ${this.blindLevels.map((level, index) => `
+                                        <div class="structure-row ${index === this.currentLevel ? 'current' : ''} ${index < this.currentLevel ? 'past' : ''}">
+                                            <div class="structure-cell text-number">${level.level}</div>
+                                            <div class="structure-cell text-number">${this.formatNumber(level.small)}</div>
+                                            <div class="structure-cell text-number">${this.formatNumber(level.big)}</div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderWarning() {
+                return `
+                    <div class="modal-overlay">
+                        <div class="modal-content">
+                            <h3 class="modal-title">⚠️ Warning</h3>
+                            <p class="modal-text">
+                                Going to settings will end the current tournament. All progress will be lost.
+                            </p>
+                            <div class="modal-buttons">
+                                <button onclick="app.cancelShowSetup()" class="btn btn-secondary">
+                                    Cancel
+                                </button>
+                                <button onclick="app.confirmShowSetup()" class="btn btn-primary">
+                                    End Tournament
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            adjustPlayers(delta) {
+                this.setupData.totalPlayers = Math.max(2, Math.min(20, this.setupData.totalPlayers + delta));
+                this.render();
+            }
+
+            adjustBuyIn(delta) {
+                this.setupData.buyIn = Math.max(100, this.setupData.buyIn + delta);
+                this.render();
+            }
+
+            adjustDuration(delta) {
+                this.setupData.levelDuration = Math.max(2, Math.min(60, this.setupData.levelDuration + delta));
+                this.render();
+            }
+
+            adjustStack(delta) {
+                this.setupData.startingStack = Math.max(5000, Math.min(500000, this.setupData.startingStack + delta));
+                this.render();
+            }
+
+            goToPayouts() {
+                this.showSetup = false;
+                this.showPayouts = true;
+                if (this.payouts.length === 0) {
+                    this.payouts = new Array(this.placesPaid).fill(0);
+                }
+                this.render();
+            }
+
+            backToSetup() {
+                this.showSetup = true;
+                this.showPayouts = false;
+                this.render();
+            }
+
+            updatePlacesPaid(value) {
+                this.placesPaid = parseInt(value);
+                this.payouts = new Array(this.placesPaid).fill(0);
+                this.render();
+            }
+
+            updatePayout(index, value) {
+                this.payouts[index] = parseInt(value) || 0;
+                this.render();
+            }
+
+            adjustPayout(index, delta) {
+                const currentValue = this.payouts[index] || 0;
+                this.payouts[index] = Math.max(0, currentValue + delta);
+                this.render();
+            }
+
+            startTournament() {
+                this.playersRemaining = this.setupData.totalPlayers;
+                this.totalTime = this.setupData.levelDuration * 60;
+                this.timeLeft = this.setupData.levelDuration * 60;
+                this.currentLevel = 0;
+                this.isRunning = false;
+                this.isExtended = false;
+                this.showSetup = false;
+                this.showPayouts = false;
+                this.render();
+            }
+
+            showSettingsMenu() {
+                if (this.isGameInProgress()) {
+                    this.showWarning = true;
+                } else {
+                    this.isRunning = false;
+                    this.showSetup = true;
+                }
+                this.render();
+            }
+
+            confirmShowSetup() {
+                this.isRunning = false;
+                this.showWarning = false;
+                this.showSetup = true;
+                this.render();
+            }
+
+            cancelShowSetup() {
+                this.showWarning = false;
+                this.render();
+            }
+
+            eliminatePlayer() {
+                if (this.playersRemaining > 1) {
+                    this.playersRemaining--;
+                    if (this.playersRemaining === 1) {
+                        this.createConfetti();
+                    }
+                    this.render();
+                }
+            }
+
+            addPlayer() {
+                if (this.playersRemaining < this.setupData.totalPlayers) {
+                    this.playersRemaining++;
+                    this.render();
+                }
+            }
+
+            initAudioContext() {
+                // Initialize audio context on first user interaction to satisfy browser autoplay policies
+                if (!this.audioContextInitialized) {
+                    try {
+                        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                        ctx.resume();
+                        ctx.close();
+                        this.audioContextInitialized = true;
+                    } catch (e) {
+                        console.log('Audio context initialization:', e);
+                    }
+                }
+            }
+
+            toggleTimer() {
+                this.initAudioContext(); // Initialize audio on user interaction
+                this.isRunning = !this.isRunning;
+                this.render();
+            }
+
+            addTwoMinutes() {
+                this.timeLeft += 120;
+                this.render();
+            }
+
+            nextLevel() {
+                if (this.currentLevel < this.blindLevels.length - 1) {
+                    this.currentLevel++;
+                    this.timeLeft = this.totalTime;
+                    this.isExtended = false;
+                    this.triggerLevelChange();
+                    this.render();
+                }
+            }
+
+            prevLevel() {
+                if (this.currentLevel > 0) {
+                    this.currentLevel--;
+                    this.timeLeft = this.totalTime;
+                    this.isExtended = false;
+                    this.triggerLevelChange();
+                    this.render();
+                }
+            }
+
+            toggleExtend() {
+                this.isExtended = !this.isExtended;
+                this.render();
+            }
+
+            toggleSound() {
+                this.soundEnabled = !this.soundEnabled;
+                this.render();
+            }
+        }
+
+        const app = new PokerTimer();
+        window.app = app;
+    </script>
+</body>
+</html>
