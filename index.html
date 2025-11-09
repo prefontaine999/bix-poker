@@ -1071,31 +1071,9 @@
             playWarningSound() {
                 if (!this.soundEnabled) return;
                 try {
-                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    
-                    for (let i = 0; i < 3; i++) {
-                        const oscillator = audioContext.createOscillator();
-                        const gainNode = audioContext.createGain();
-                        
-                        oscillator.connect(gainNode);
-                        gainNode.connect(audioContext.destination);
-                        
-                        oscillator.frequency.setValueAtTime(400, audioContext.currentTime);
-                        oscillator.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.3);
-                        oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 0.6);
-                        oscillator.frequency.exponentialRampToValueAtTime(800, audioContext.currentTime + 0.9);
-                        oscillator.frequency.exponentialRampToValueAtTime(400, audioContext.currentTime + 1.2);
-                        oscillator.type = 'sine';
-                        
-                        gainNode.gain.setValueAtTime(0.8, audioContext.currentTime);
-                        gainNode.gain.setValueAtTime(0.8, audioContext.currentTime + 1.2);
-                        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 1.25);
-                        
-                        oscillator.start(audioContext.currentTime);
-                        oscillator.stop(audioContext.currentTime + 1.25);
-                    }
-                    
-                    setTimeout(() => audioContext.close(), 1500);
+                    const audio = new Audio('sounds/spaceshipalarm-2.mp3');
+                    audio.volume = 0.8;
+                    audio.play().catch(e => console.log('Could not play warning sound:', e));
                 } catch (e) {
                     console.log('Could not play warning sound:', e);
                 }
@@ -1104,33 +1082,9 @@
             playLevelEndSound() {
                 if (!this.soundEnabled) return;
                 try {
-                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    const beepTimes = [0, 0.15, 0.3, 0.45];
-                    
-                    beepTimes.forEach((startTime) => {
-                        for (let i = 0; i < 3; i++) {
-                            const oscillator = audioContext.createOscillator();
-                            const gainNode = audioContext.createGain();
-                            
-                            oscillator.connect(gainNode);
-                            gainNode.connect(audioContext.destination);
-                            
-                            oscillator.frequency.value = 880;
-                            oscillator.type = 'sine';
-                            
-                            const beepStart = audioContext.currentTime + startTime;
-                            const beepEnd = beepStart + 0.1;
-                            
-                            gainNode.gain.setValueAtTime(0, beepStart);
-                            gainNode.gain.linearRampToValueAtTime(0.8, beepStart + 0.005);
-                            gainNode.gain.exponentialRampToValueAtTime(0.01, beepEnd);
-                            
-                            oscillator.start(beepStart);
-                            oscillator.stop(beepEnd);
-                        }
-                    });
-                    
-                    setTimeout(() => audioContext.close(), 1500);
+                    const audio = new Audio('sounds/nextlevelfish-2.mp3');
+                    audio.volume = 0.8;
+                    audio.play().catch(e => console.log('Could not play level end sound:', e));
                 } catch (e) {
                     console.log('Could not play level end sound:', e);
                 }
@@ -1264,11 +1218,11 @@
                             <div class="setup-group">
                                 <label class="setup-label">Level Duration (minutes)</label>
                                 <div class="setup-control">
-                                    <button class="btn btn-icon" onclick="app.adjustDuration(-5)">
+                                    <button class="btn btn-icon" onclick="app.adjustDuration(-1)">
                                         ${icons.Minus}
                                     </button>
                                     <div class="setup-value text-number">${this.setupData.levelDuration}</div>
-                                    <button class="btn btn-icon" onclick="app.adjustDuration(5)">
+                                    <button class="btn btn-icon" onclick="app.adjustDuration(1)">
                                         ${icons.Plus}
                                     </button>
                                 </div>
@@ -1662,7 +1616,7 @@
             }
 
             adjustDuration(delta) {
-                this.setupData.levelDuration = Math.max(10, Math.min(60, this.setupData.levelDuration + delta));
+                this.setupData.levelDuration = Math.max(2, Math.min(60, this.setupData.levelDuration + delta));
                 this.render();
             }
 
