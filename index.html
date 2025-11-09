@@ -1145,7 +1145,7 @@
             getPayoutTickerContent() {
                 const medals = ['🥇', '🥈', '🥉'];
                 const currentPayouts = this.getCurrentPayouts();
-                return currentPayouts.map((amount, index) => {
+                return currentPayouts.slice(0, this.placesPaid).map((amount, index) => {
                     const medal = index < 3 ? medals[index] + ' ' : '';
                     return `${medal}${this.getOrdinal(index + 1)}: ${this.formatNumber(amount)} THB`;
                 }).join(' • ');
@@ -1178,7 +1178,8 @@
             }
 
             renderSetup() {
-                const startingBB = Math.round(this.setupData.startingStack / 400);
+                const firstBigBlind = this.blindLevels[0].big;
+                const startingBB = Math.round(this.setupData.startingStack / firstBigBlind);
                 const totalPrizePool = this.setupData.totalPlayers * this.setupData.buyIn;
                 
                 return `
@@ -1218,11 +1219,11 @@
                             <div class="setup-group">
                                 <label class="setup-label">Level Duration (minutes)</label>
                                 <div class="setup-control">
-                                    <button class="btn btn-icon" onclick="app.adjustDuration(-1)">
+                                    <button class="btn btn-icon" onclick="app.adjustDuration(-5)">
                                         ${icons.Minus}
                                     </button>
                                     <div class="setup-value text-number">${this.setupData.levelDuration}</div>
-                                    <button class="btn btn-icon" onclick="app.adjustDuration(1)">
+                                    <button class="btn btn-icon" onclick="app.adjustDuration(5)">
                                         ${icons.Plus}
                                     </button>
                                 </div>
@@ -1258,7 +1259,7 @@
                                     Starting Stack: <strong class="text-number" style="color: var(--color-gold)">${startingBB} Big Blinds</strong>
                                 </div>
                                 <div style="font-size: 0.65625rem; color: var(--color-text-muted);">
-                                    ${this.formatNumber(this.setupData.startingStack)} chips ÷ 400 BB
+                                    ${this.formatNumber(this.setupData.startingStack)} chips ÷ ${this.formatNumber(firstBigBlind)} BB
                                 </div>
                             </div>
 
@@ -1616,7 +1617,7 @@
             }
 
             adjustDuration(delta) {
-                this.setupData.levelDuration = Math.max(2, Math.min(60, this.setupData.levelDuration + delta));
+                this.setupData.levelDuration = Math.max(10, Math.min(60, this.setupData.levelDuration + delta));
                 this.render();
             }
 
