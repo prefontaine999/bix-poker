@@ -521,6 +521,7 @@
             display: flex;
             flex-direction: column;
             min-height: 0;
+            overflow: hidden;
         }
         
         .structure-scroll-container {
@@ -531,6 +532,8 @@
         
         .structure-scroll-container::-webkit-scrollbar {
             width: 6px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
         }
         
         .structure-scroll-container::-webkit-scrollbar-track {
@@ -541,6 +544,21 @@
         .structure-scroll-container::-webkit-scrollbar-thumb {
             background: var(--color-felt);
             border-radius: 3px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .structure-scroll-container.scrollbar-visible::-webkit-scrollbar-thumb {
+            opacity: 1;
+        }
+        
+        .structure-scroll-container.scrollbar-hidden {
+            scrollbar-width: none;
+        }
+        
+        .structure-scroll-container.scrollbar-hidden::-webkit-scrollbar {
+            width: 0;
+            display: none;
         }
         
         .structure-table {
@@ -889,7 +907,7 @@
     <div id="app"></div>
     
     <div class="keyboard-hint" id="keyboardHint">
-        <kbd>SPACE</kbd> Play/Pause • <kbd>ENTER</kbd> Controls • <kbd>R</kbd> Rebuy • <kbd>←</kbd> <kbd>→</kbd> Levels • <kbd>BACKSPACE</kbd> Out • <kbd>F</kbd> Fullscreen
+        <kbd>SPACE</kbd> Play/Pause • <kbd>ENTER</kbd> Controls • <kbd>R</kbd> Rebuy • <kbd>T</kbd> +2min • <kbd>←</kbd> <kbd>→</kbd> Levels • <kbd>BACKSPACE</kbd> Out • <kbd>F</kbd> Fullscreen
     </div>
 
     <script>
@@ -961,10 +979,15 @@
                 this.isFullscreen = false;
                 this.audioContextInitialized = false;
                 this.controlPanelOpen = false;
+                this.cachedStructureHeight = null;
+                this.cachedScrollTop = 0;
+                this.lastScrolledLevel = -1;
+                this.scrollbarHideTimer = null;
 
                 this.setupKeyboardShortcuts();
                 this.setupFullscreenListener();
                 this.setupResizeListener();
+                this.setupScrollbarAutoHide();
                 this.render();
                 this.startTimer();
                 
@@ -1012,6 +1035,13 @@
                     if (e.code === 'KeyF') {
                         e.preventDefault();
                         this.toggleFullscreen();
+                    }
+                    
+                    if (e.code === 'KeyT') {
+                        e.preventDefault();
+                        if (!this.showSetup && !this.showPayouts && !this.showSeating && this.currentLevel < this.blindLevels.length - 1) {
+                            this.addTwoMinutes();
+                        }
                     }
                     
                     if (e.code === 'Enter') {
@@ -1193,6 +1223,13 @@
             render() {
                 const app = document.getElementById('app');
                 
+                // Save scroll position before re-rendering
+                const scrollContainer = document.querySelector('.structure-scroll-container');
+                const levelChanged = this.lastScrolledLevel !== this.currentLevel;
+                if (scrollContainer && !levelChanged) {
+                    this.cachedScrollTop = scrollContainer.scrollTop;
+                }
+                
                 if (this.showSetup) {
                     app.innerHTML = this.renderSetup();
                 } else if (this.showPayouts) {
@@ -1202,35 +1239,97 @@
                 } else if (this.showWarning) {
                     app.innerHTML = this.renderGame() + this.renderWarning();
                     this.matchStructureHeight();
-                    this.scrollToCurrentLevel();
+                    if (levelChanged) {
+                        this.scrollToCurrentLevel();
+                    } else {
+                        this.restoreScrollPosition();
+                    }
                 } else {
                     app.innerHTML = this.renderGame();
                     this.matchStructureHeight();
-                    this.scrollToCurrentLevel();
+                    if (levelChanged) {
+                        this.scrollToCurrentLevel();
+                    } else {
+                        this.restoreScrollPosition();
+                    }
                 }
             }
 
+            restoreScrollPosition() {
+                const scrollContainer = document.querySelector('.structure-scroll-container');
+                if (scrollContainer && this.cachedScrollTop > 0) {
+                    scrollContainer.scrollTop = this.cachedScrollTop;
+                }
+            }
+
+            setupScrollbarAutoHide() {
+                const showScrollbar = () => {
+                    const scrollContainer = document.querySelector('.structure-scroll-container');
+                    if (!scrollContainer) return;
+                    
+                    scrollContainer.classList.remove('scrollbar-hidden');
+                    clearTimeout(this.scrollbarHideTimer);
+                    this.scrollbarHideTimer = setTimeout(() => {
+                        const container = document.querySelector('.structure-scroll-container');
+                        if (container) {
+                            container.classList.add('scrollbar-hidden');
+                        }
+                    }, 3000);
+                };
+                
+                document.addEventListener('scroll', (e) => {
+                    if (e.target.classList && e.target.classList.contains('structure-scroll-container')) {
+                        showScrollbar();
+                    }
+                }, true);
+                
+                document.addEventListener('mouseenter', (e) => {
+                    if (e.target.classList && e.target.classList.contains('structure-scroll-container')) {
+                        showScrollbar();
+                    }
+                }, true);
+                
+                document.addEventListener('mouseleave', (e) => {
+                    if (e.target.classList && e.target.classList.contains('structure-scroll-container')) {
+                        clearTimeout(this.scrollbarHideTimer);
+                        this.scrollbarHideTimer = setTimeout(() => {
+                            const container = document.querySelector('.structure-scroll-container');
+                            if (container) {
+                                container.classList.add('scrollbar-hidden');
+                            }
+                        }, 3000);
+                    }
+                }, true);
+            }
+
             scrollToCurrentLevel() {
-                setTimeout(() => {
+                if (this.lastScrolledLevel !== this.currentLevel) {
                     const currentRow = document.querySelector('.structure-row.current');
                     const container = document.querySelector('.structure-scroll-container');
                     if (currentRow && container) {
                         const rowTop = currentRow.offsetTop - container.offsetTop;
                         const targetScroll = Math.max(0, rowTop - 40);
                         container.scrollTop = targetScroll;
+                        this.lastScrolledLevel = this.currentLevel;
+                        
+                        // Briefly show scrollbar when level changes
+                        container.classList.remove('scrollbar-hidden');
+                        clearTimeout(this.scrollbarHideTimer);
+                        this.scrollbarHideTimer = setTimeout(() => {
+                            container.classList.add('scrollbar-hidden');
+                        }, 3000);
                     }
-                }, 50);
+                }
             }
 
             matchStructureHeight() {
-                setTimeout(() => {
-                    const timerSection = document.querySelector('.timer-section');
-                    const structureSection = document.querySelector('.structure-section');
-                    if (timerSection && structureSection) {
-                        const timerHeight = timerSection.offsetHeight;
-                        structureSection.style.height = timerHeight + 'px';
-                    }
-                }, 10);
+                const timerSection = document.querySelector('.timer-section');
+                const structureSection = document.querySelector('.structure-section');
+                if (timerSection && structureSection) {
+                    const timerHeight = timerSection.offsetHeight;
+                    structureSection.style.height = timerHeight + 'px';
+                    this.cachedStructureHeight = timerHeight;
+                }
             }
 
             renderSetup() {
@@ -1539,8 +1638,8 @@
                                 </div>
                             </div>
 
-                            <div class="card structure-section">
-                                <div class="structure-scroll-container">
+                            <div class="card structure-section" ${this.cachedStructureHeight ? `style="height: ${this.cachedStructureHeight}px;"` : ''}>
+                                <div class="structure-scroll-container scrollbar-hidden">
                                     <div class="structure-table">
                                         <div class="structure-header">
                                             <div class="structure-cell">Level</div>
