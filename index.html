@@ -1098,13 +1098,16 @@
                             this.playWarningSound();
                         }
                         
+                        if (this.timeLeft === 2 && !this.isExtended) {
+                            this.playLevelEndSound();
+                        }
+                        
                         this.render();
                     } else if (this.timeLeft === 0 && this.isRunning && !this.isExtended && !isLastLevel) {
                         if (this.currentLevel < this.blindLevels.length - 1) {
                             this.currentLevel++;
                             this.timeLeft = this.totalTime;
                             this.isExtended = false;
-                            this.playLevelEndSound();
                             this.triggerLevelChange();
                             this.render();
                         } else {
