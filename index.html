@@ -1377,11 +1377,11 @@
                             <div class="setup-group">
                                 <label class="setup-label">Level Duration (minutes)</label>
                                 <div class="setup-control">
-                                    <button class="btn btn-icon" onclick="app.adjustDuration(-5)">
+                                    <button class="btn btn-icon" onclick="app.adjustDuration(-1)">
                                         ${icons.Minus}
                                     </button>
                                     <div class="setup-value text-number">${this.setupData.levelDuration}</div>
-                                    <button class="btn btn-icon" onclick="app.adjustDuration(5)">
+                                    <button class="btn btn-icon" onclick="app.adjustDuration(1)">
                                         ${icons.Plus}
                                     </button>
                                 </div>
@@ -1777,7 +1777,7 @@
             }
 
             adjustDuration(delta) {
-                this.setupData.levelDuration = Math.max(10, Math.min(60, this.setupData.levelDuration + delta));
+                this.setupData.levelDuration = Math.max(1, Math.min(60, this.setupData.levelDuration + delta));
                 this.render();
             }
 
