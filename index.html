@@ -385,6 +385,7 @@
             display: grid;
             grid-template-columns: 2fr 1fr;
             gap: var(--space-lg);
+            align-items: start;
         }
         
         /* ===== TIMER SECTION ===== */
@@ -517,20 +518,27 @@
         /* ===== BLIND STRUCTURE ===== */
         .structure-section {
             padding: var(--space-lg);
-            max-height: none;
-            overflow-y: visible;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
         }
         
-        .structure-section::-webkit-scrollbar {
+        .structure-scroll-container {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+        
+        .structure-scroll-container::-webkit-scrollbar {
             width: 6px;
         }
         
-        .structure-section::-webkit-scrollbar-track {
+        .structure-scroll-container::-webkit-scrollbar-track {
             background: rgba(0, 0, 0, 0.2);
             border-radius: 3px;
         }
         
-        .structure-section::-webkit-scrollbar-thumb {
+        .structure-scroll-container::-webkit-scrollbar-thumb {
             background: var(--color-felt);
             border-radius: 3px;
         }
@@ -917,10 +925,17 @@
                     { level: 10, small: 15000, big: 30000 },
                     { level: 11, small: 20000, big: 40000 },
                     { level: 12, small: 30000, big: 60000 },
+                    { level: 13, small: 100000, big: 200000 },
+                    { level: 14, small: 100000, big: 200000 },
+                    { level: 15, small: 100000, big: 200000 },
+                    { level: 16, small: 100000, big: 200000 },
+                    { level: 17, small: 100000, big: 200000 },
+                    { level: 18, small: 100000, big: 200000 },
                 ];
 
                 this.showSetup = true;
                 this.showPayouts = false;
+                this.showSeating = false;
                 this.showWarning = false;
                 this.setupData = {
                     totalPlayers: 7,
@@ -929,6 +944,9 @@
                     buyIn: 2000,
                     rebuyCloseLevel: 0
                 };
+                this.playerNames = [];
+                this.tableCount = 1;
+                this.tableAssignments = null;
                 this.payouts = [];
                 this.placesPaid = 3;
                 this.currentLevel = 0;
@@ -946,6 +964,7 @@
 
                 this.setupKeyboardShortcuts();
                 this.setupFullscreenListener();
+                this.setupResizeListener();
                 this.render();
                 this.startTimer();
                 
@@ -1015,6 +1034,14 @@
                 document.addEventListener('fullscreenchange', () => {
                     this.isFullscreen = !!document.fullscreenElement;
                     this.render();
+                });
+            }
+
+            setupResizeListener() {
+                window.addEventListener('resize', () => {
+                    if (!this.showSetup && !this.showPayouts && !this.showSeating) {
+                        this.matchStructureHeight();
+                    }
                 });
             }
 
@@ -1170,11 +1197,40 @@
                     app.innerHTML = this.renderSetup();
                 } else if (this.showPayouts) {
                     app.innerHTML = this.renderPayouts();
+                } else if (this.showSeating) {
+                    app.innerHTML = this.renderSeating();
                 } else if (this.showWarning) {
                     app.innerHTML = this.renderGame() + this.renderWarning();
+                    this.matchStructureHeight();
+                    this.scrollToCurrentLevel();
                 } else {
                     app.innerHTML = this.renderGame();
+                    this.matchStructureHeight();
+                    this.scrollToCurrentLevel();
                 }
+            }
+
+            scrollToCurrentLevel() {
+                setTimeout(() => {
+                    const currentRow = document.querySelector('.structure-row.current');
+                    const container = document.querySelector('.structure-scroll-container');
+                    if (currentRow && container) {
+                        const rowTop = currentRow.offsetTop - container.offsetTop;
+                        const targetScroll = Math.max(0, rowTop - 40);
+                        container.scrollTop = targetScroll;
+                    }
+                }, 50);
+            }
+
+            matchStructureHeight() {
+                setTimeout(() => {
+                    const timerSection = document.querySelector('.timer-section');
+                    const structureSection = document.querySelector('.structure-section');
+                    if (timerSection && structureSection) {
+                        const timerHeight = timerSection.offsetHeight;
+                        structureSection.style.height = timerHeight + 'px';
+                    }
+                }, 10);
             }
 
             renderSetup() {
@@ -1350,8 +1406,8 @@
                                 <button onclick="app.backToSetup()" class="btn btn-secondary flex-1" style="padding: 0.9375rem;">
                                     Back
                                 </button>
-                                <button onclick="app.startTournament()" ${!isValidTotal ? 'disabled' : ''} class="btn btn-primary flex-1" style="padding: 0.9375rem;">
-                                    Start Tournament
+                                <button onclick="app.goToSeating()" ${!isValidTotal ? 'disabled' : ''} class="btn btn-primary flex-1" style="padding: 0.9375rem;">
+                                    Next: Seat Players
                                 </button>
                             </div>
                         </div>
@@ -1484,20 +1540,22 @@
                             </div>
 
                             <div class="card structure-section">
-                                <div class="structure-table">
-                                    <div class="structure-header">
-                                        <div class="structure-cell">Level</div>
-                                        <div class="structure-cell">SB</div>
-                                        <div class="structure-cell">BB</div>
-                                    </div>
-                                    
-                                    ${this.blindLevels.map((level, index) => `
-                                        <div class="structure-row ${index === this.currentLevel ? 'current' : ''} ${index < this.currentLevel ? 'past' : ''}">
-                                            <div class="structure-cell text-number">${level.level}</div>
-                                            <div class="structure-cell text-number">${this.formatNumber(level.small)}</div>
-                                            <div class="structure-cell text-number">${this.formatNumber(level.big)}</div>
+                                <div class="structure-scroll-container">
+                                    <div class="structure-table">
+                                        <div class="structure-header">
+                                            <div class="structure-cell">Level</div>
+                                            <div class="structure-cell">SB</div>
+                                            <div class="structure-cell">BB</div>
                                         </div>
-                                    `).join('')}
+                                        
+                                        ${this.blindLevels.map((level, index) => `
+                                            <div class="structure-row ${index === this.currentLevel ? 'current' : ''} ${index < this.currentLevel ? 'past' : ''}">
+                                                <div class="structure-cell text-number">${level.level}</div>
+                                                <div class="structure-cell text-number">${this.formatNumber(level.small)}</div>
+                                                <div class="structure-cell text-number">${this.formatNumber(level.big)}</div>
+                                            </div>
+                                        `).join('')}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1673,7 +1731,185 @@
                 this.isExtended = false;
                 this.showSetup = false;
                 this.showPayouts = false;
+                this.showSeating = false;
                 this.render();
+            }
+
+            goToSeating() {
+                this.showPayouts = false;
+                this.showSeating = true;
+                this.playerNames = new Array(this.setupData.totalPlayers).fill('');
+                this.tableCount = this.setupData.totalPlayers > 10 ? 2 : 1;
+                this.tableAssignments = null;
+                this.render();
+            }
+
+            backToPayouts() {
+                this.showSeating = false;
+                this.showPayouts = true;
+                this.render();
+            }
+
+            updatePlayerName(index, value) {
+                this.playerNames[index] = value;
+            }
+
+            updateTableCount(value) {
+                this.tableCount = parseInt(value);
+                this.tableAssignments = null;
+                this.render();
+            }
+
+            shuffleArray(array) {
+                const shuffled = [...array];
+                for (let i = shuffled.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+                }
+                return shuffled;
+            }
+
+            assignSeats() {
+                const filledNames = this.playerNames.filter(n => n.trim() !== '');
+                if (filledNames.length !== this.setupData.totalPlayers) {
+                    alert(`Please enter all ${this.setupData.totalPlayers} player names`);
+                    return;
+                }
+
+                const shuffled = this.shuffleArray(filledNames);
+                
+                if (this.tableCount === 1) {
+                    this.tableAssignments = {
+                        pokerTable: shuffled
+                    };
+                } else {
+                    const pokerTableCount = Math.ceil(this.setupData.totalPlayers / 2);
+                    this.tableAssignments = {
+                        pokerTable: shuffled.slice(0, pokerTableCount),
+                        kitchenTable: shuffled.slice(pokerTableCount)
+                    };
+                }
+                this.render();
+            }
+
+            getPositionLabel(index) {
+                if (index === 0) return 'Dealer';
+                if (index === 1) return 'SB';
+                if (index === 2) return 'BB';
+                return null;
+            }
+
+            renderSeating() {
+                if (this.tableAssignments) {
+                    return this.renderSeatingResult();
+                }
+                return this.renderSeatingInput();
+            }
+
+            renderSeatingInput() {
+                const halfCount = Math.ceil(this.setupData.totalPlayers / 2);
+                const firstHalf = this.playerNames.slice(0, halfCount);
+                const secondHalf = this.playerNames.slice(halfCount);
+
+                return `
+                    <div class="app-container animate-slide-in" style="max-width: 700px; margin: 0 auto; padding: var(--space-xl);">
+                        <div class="setup-header">
+                            <h1 class="setup-title">Seating Assignment</h1>
+                            <p class="setup-subtitle">Enter player names for random seat assignment</p>
+                        </div>
+
+                        <div class="card setup-card">
+                            <div class="setup-group">
+                                <label class="setup-label">Number of Tables</label>
+                                <div style="display: flex; justify-content: center;">
+                                    <select onchange="app.updateTableCount(this.value)" class="setup-select">
+                                        <option value="1" ${this.tableCount === 1 ? 'selected' : ''}>1 Table</option>
+                                        <option value="2" ${this.tableCount === 2 ? 'selected' : ''}>2 Tables</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="setup-group">
+                                <label class="setup-label">Player Names (${this.setupData.totalPlayers} players)</label>
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-sm);">
+                                    ${this.playerNames.map((name, index) => `
+                                        <div style="display: flex; align-items: center; gap: var(--space-xs);">
+                                            <span style="color: var(--color-text-muted); font-size: 0.75rem; width: 24px;">${index + 1}.</span>
+                                            <input 
+                                                type="text" 
+                                                value="${name}" 
+                                                onchange="app.updatePlayerName(${index}, this.value)"
+                                                oninput="app.updatePlayerName(${index}, this.value)"
+                                                class="setup-input"
+                                                style="flex: 1; text-align: left;"
+                                                placeholder="Player ${index + 1}"
+                                            >
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+
+                            <button onclick="app.assignSeats()" class="btn btn-primary" style="width: 100%; padding: 0.9375rem; font-size: 0.84375rem;">
+                                Randomly Assign Seats
+                            </button>
+
+                            <div class="setup-buttons" style="margin-top: var(--space-md);">
+                                <button onclick="app.backToPayouts()" class="btn btn-secondary flex-1" style="padding: 0.75rem;">
+                                    Back to Payouts
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderSeatingResult() {
+                const tables = this.tableCount === 1 
+                    ? [{ key: 'pokerTable', name: 'Poker Table' }]
+                    : [{ key: 'pokerTable', name: 'Poker Table' }, { key: 'kitchenTable', name: 'Kitchen Table' }];
+
+                return `
+                    <div class="app-container animate-slide-in" style="max-width: 900px; margin: 0 auto; padding: var(--space-xl);">
+                        <div class="setup-header">
+                            <h1 class="setup-title">Table Assignments</h1>
+                            <p class="setup-subtitle">Players have been randomly assigned to seats</p>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: ${this.tableCount === 1 ? '1fr' : '1fr 1fr'}; gap: var(--space-lg);">
+                            ${tables.map(table => `
+                                <div class="card" style="padding: var(--space-lg);">
+                                    <h2 style="text-align: center; font-size: 1.5rem; font-weight: 700; color: var(--color-gold); margin-bottom: var(--space-lg); text-shadow: 0 0 20px rgba(251, 191, 36, 0.3);">
+                                        ${table.name}
+                                    </h2>
+                                    <div style="display: flex; flex-direction: column; gap: var(--space-sm);">
+                                        ${this.tableAssignments[table.key].map((player, index) => {
+                                            const position = this.getPositionLabel(index);
+                                            return `
+                                                <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0, 0, 0, 0.3); border-radius: 0.5625rem; padding: var(--space-sm) var(--space-md); border: 1px solid rgba(255, 255, 255, 0.05);">
+                                                    <div style="display: flex; align-items: center; gap: var(--space-sm);">
+                                                        <span style="color: var(--color-text-muted); font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; width: 32px;">#${index + 1}</span>
+                                                        <span style="font-size: 1rem; font-weight: 600;">${player}</span>
+                                                    </div>
+                                                    ${position ? `
+                                                        <span style="background: rgba(255, 255, 255, 0.1); padding: 0.25rem 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 700; color: var(--color-text-secondary);">
+                                                            ${position}
+                                                        </span>
+                                                    ` : ''}
+                                                </div>
+                                            `;
+                                        }).join('')}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <div style="margin-top: var(--space-xl); text-align: center;">
+                            <button onclick="app.startTournament()" class="btn btn-primary" style="padding: 0.9375rem 3rem; font-size: 0.9375rem;">
+                                Start Tournament
+                            </button>
+                        </div>
+                    </div>
+                `;
             }
 
             showSettingsMenu() {
