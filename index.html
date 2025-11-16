@@ -1131,7 +1131,7 @@
             playWarningSound() {
                 if (!this.soundEnabled) return;
                 try {
-                    const audio = new Audio('sounds/mixkit-repeating-arcade-beep-1084.wav');
+                    const audio = new Audio('sounds/mixkit-repeating-arcade-beep-1084.mp3');
                     audio.volume = 0.8;
                     audio.play().catch(e => console.log('Could not play warning sound:', e));
                 } catch (e) {
@@ -1142,7 +1142,7 @@
             playLevelEndSound() {
                 if (!this.soundEnabled) return;
                 try {
-                    const audio = new Audio('sounds/mixkit-arcade-race-game-countdown-1952.wav');
+                    const audio = new Audio('sounds/mixkit-arcade-race-game-countdown-1952.mp3');
                     audio.volume = 0.8;
                     audio.play().catch(e => console.log('Could not play level end sound:', e));
                 } catch (e) {
