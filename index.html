@@ -891,6 +891,78 @@
             align-self: center;
         }
         
+        /* ===== SHUFFLE ANIMATION ===== */
+        .shuffle-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            animation: fade-in var(--transition-fast) ease-out;
+        }
+        
+        .shuffle-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--color-gold);
+            margin-bottom: var(--space-xl);
+            text-shadow: 0 0 24px rgba(251, 191, 36, 0.5);
+        }
+        
+        .shuffle-slots {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-sm);
+            background: rgba(0, 0, 0, 0.5);
+            padding: var(--space-lg);
+            border-radius: 0.75rem;
+            border: 2px solid var(--color-gold);
+            box-shadow: var(--shadow-glow-gold);
+            min-width: 300px;
+        }
+        
+        .shuffle-slot {
+            display: flex;
+            align-items: center;
+            gap: var(--space-sm);
+            background: rgba(30, 82, 69, 0.3);
+            padding: var(--space-sm) var(--space-md);
+            border-radius: 0.5rem;
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            overflow: hidden;
+        }
+        
+        .shuffle-slot-number {
+            color: var(--color-text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            width: 32px;
+        }
+        
+        .shuffle-slot-name {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--color-text-primary);
+            transition: all 0.05s ease;
+        }
+        
+        @keyframes slot-spin {
+            0% { transform: translateY(0); opacity: 1; }
+            50% { transform: translateY(-10px); opacity: 0.5; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+        
+        .shuffle-slot-name.spinning {
+            animation: slot-spin 0.1s ease-in-out;
+        }
+        
         /* ===== UTILITY CLASSES ===== */
         .flex-1 { flex: 1; }
         .text-center { text-align: center; }
@@ -997,6 +1069,9 @@
                 this.showRedraw = false;
                 this.redrawSelections = [];
                 this.redrawResult = null;
+                this.isShuffling = false;
+                this.shuffleNames = [];
+                this.shuffleInterval = null;
                 this.payouts = [];
                 this.placesPaid = 3;
                 this.currentLevel = 0;
@@ -1265,24 +1340,31 @@
                     this.cachedScrollTop = scrollContainer.scrollTop;
                 }
                 
+                let content = '';
+                
                 if (this.showSetup) {
-                    app.innerHTML = this.renderSetup();
+                    content = this.renderSetup();
                 } else if (this.showPayouts) {
-                    app.innerHTML = this.renderPayouts();
+                    content = this.renderPayouts();
                 } else if (this.showSeating) {
-                    app.innerHTML = this.renderSeating();
+                    content = this.renderSeating();
                 } else if (this.showRedraw) {
-                    app.innerHTML = this.renderRedrawSeating();
+                    content = this.renderRedrawSeating();
                 } else if (this.showWarning) {
-                    app.innerHTML = this.renderGame() + this.renderWarning();
-                    this.matchStructureHeight();
-                    if (levelChanged) {
-                        this.scrollToCurrentLevel();
-                    } else {
-                        this.restoreScrollPosition();
-                    }
+                    content = this.renderGame() + this.renderWarning();
                 } else {
-                    app.innerHTML = this.renderGame();
+                    content = this.renderGame();
+                }
+                
+                // Add shuffle animation overlay if shuffling
+                if (this.isShuffling) {
+                    content += this.renderShuffleAnimation();
+                }
+                
+                app.innerHTML = content;
+                
+                // Post-render actions for game screen
+                if (!this.showSetup && !this.showPayouts && !this.showSeating && !this.showRedraw && !this.isShuffling) {
                     this.matchStructureHeight();
                     if (levelChanged) {
                         this.scrollToCurrentLevel();
@@ -1927,20 +2009,79 @@
                     return;
                 }
 
-                const shuffled = this.shuffleArray(filledNames);
-                
-                if (this.tableCount === 1) {
-                    this.tableAssignments = {
-                        pokerTable: shuffled
-                    };
-                } else {
-                    const pokerTableCount = Math.ceil(this.setupData.totalPlayers / 2);
-                    this.tableAssignments = {
-                        pokerTable: shuffled.slice(0, pokerTableCount),
-                        kitchenTable: shuffled.slice(pokerTableCount)
-                    };
-                }
+                this.shuffleNames = filledNames;
+                this.startShuffleAnimation(() => {
+                    const shuffled = this.shuffleArray(filledNames);
+                    
+                    if (this.tableCount === 1) {
+                        this.tableAssignments = {
+                            pokerTable: shuffled
+                        };
+                    } else {
+                        const pokerTableCount = Math.ceil(this.setupData.totalPlayers / 2);
+                        this.tableAssignments = {
+                            pokerTable: shuffled.slice(0, pokerTableCount),
+                            kitchenTable: shuffled.slice(pokerTableCount)
+                        };
+                    }
+                    this.render();
+                });
+            }
+
+            startShuffleAnimation(onComplete) {
+                this.isShuffling = true;
                 this.render();
+                
+                let iterations = 0;
+                const maxIterations = 30; // About 3 seconds at 100ms intervals
+                
+                this.shuffleInterval = setInterval(() => {
+                    iterations++;
+                    
+                    // Update the displayed names randomly
+                    const slots = document.querySelectorAll('.shuffle-slot-name');
+                    const shuffledDisplay = this.shuffleArray([...this.shuffleNames]);
+                    
+                    slots.forEach((slot, index) => {
+                        if (index < shuffledDisplay.length) {
+                            slot.textContent = shuffledDisplay[index];
+                            slot.classList.add('spinning');
+                            setTimeout(() => slot.classList.remove('spinning'), 50);
+                        }
+                    });
+                    
+                    if (iterations >= maxIterations) {
+                        clearInterval(this.shuffleInterval);
+                        this.shuffleInterval = null;
+                        
+                        // Immediately transition to results - no pause
+                        this.isShuffling = false;
+                        onComplete();
+                    }
+                }, 100);
+            }
+
+            renderShuffleAnimation() {
+                const slotsToShow = Math.min(this.shuffleNames.length, 10); // Show max 10 slots
+                const initialShuffle = this.shuffleArray([...this.shuffleNames]);
+                
+                return `
+                    <div class="shuffle-overlay">
+                        <div class="shuffle-slots">
+                            ${initialShuffle.slice(0, slotsToShow).map((name, index) => `
+                                <div class="shuffle-slot">
+                                    <span class="shuffle-slot-number">#${index + 1}</span>
+                                    <span class="shuffle-slot-name">${name}</span>
+                                </div>
+                            `).join('')}
+                            ${this.shuffleNames.length > 10 ? `
+                                <div style="text-align: center; color: var(--color-text-muted); font-size: 0.75rem; padding-top: var(--space-xs);">
+                                    ... and ${this.shuffleNames.length - 10} more
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
             }
 
             getPositionLabel(index) {
@@ -2088,9 +2229,12 @@
                     return;
                 }
                 
-                const shuffled = this.shuffleArray(selectedPlayers);
-                this.redrawResult = shuffled;
-                this.render();
+                this.shuffleNames = selectedPlayers;
+                this.startShuffleAnimation(() => {
+                    const shuffled = this.shuffleArray(selectedPlayers);
+                    this.redrawResult = shuffled;
+                    this.render();
+                });
             }
 
             cancelRedraw() {
@@ -2117,7 +2261,7 @@
                 return `
                     <div class="app-container animate-slide-in" style="max-width: 700px; margin: 0 auto; padding: var(--space-xl);">
                         <div class="setup-header">
-                            <h1 class="setup-title">Redraw Seating</h1>
+                            <h1 class="setup-title">Final Table Draw</h1>
                             <p class="setup-subtitle">Select players still in the tournament</p>
                         </div>
 
@@ -2144,7 +2288,7 @@
                             </div>
 
                             <button onclick="app.performRedraw()" class="btn btn-primary" style="width: 100%; padding: 0.9375rem; font-size: 0.84375rem;" ${!canRedraw ? 'disabled' : ''}>
-                                ${icons.Shuffle} Randomly Assign New Seats
+                                ${icons.Shuffle} Draw Final Table
                             </button>
                             ${!canRedraw && selectedCount > 0 ? `
                                 <div style="text-align: center; color: var(--color-red); font-size: 0.75rem; margin-top: var(--space-xs);">
@@ -2166,7 +2310,7 @@
                 return `
                     <div class="app-container animate-slide-in" style="max-width: 700px; margin: 0 auto; padding: var(--space-xl);">
                         <div class="setup-header">
-                            <h1 class="setup-title">New Table Assignment</h1>
+                            <h1 class="setup-title">Final Table Assignment</h1>
                             <p class="setup-subtitle">Players have been randomly assigned to seats</p>
                         </div>
 
