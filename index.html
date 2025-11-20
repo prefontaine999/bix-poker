@@ -263,7 +263,7 @@
             left: 50%;
             transform: translate(-50%, -50%) scale(0.9);
             background: var(--bg-rail);
-            border: var(--border);
+            border: 1px solid #ffffff; /* UPDATED: Changed to white outline */
             border-radius: 0.5rem;
             padding: 2rem;
             opacity: 0;
@@ -1322,7 +1322,11 @@
                 const cur = this.blindLevels[this.currentLevel];
                 const pool = (this.setupData.totalPlayers * this.setupData.buyIn) + (this.rebuys * this.setupData.buyIn);
                 const avgChips = Math.round((this.setupData.totalPlayers * this.setupData.startingStack) / this.playersRemaining);
-                const avgBB = (avgChips / cur.big).toFixed(1);
+                
+                // UPDATED: Logic to remove decimals if BB > 10
+                const rawBB = avgChips / cur.big;
+                const avgBB = rawBB.toFixed(rawBB >= 10 ? 0 : 1);
+                
                 const pct = ((this.totalTime - this.timeLeft) / this.totalTime) * 100;
 
                 return `
@@ -1371,7 +1375,7 @@
                                 ${this.getPayoutTickerContent()}
                             </div>
 
-                            <div class="main-timer mono ${this.timeLeft < 60 && !this.isExtended ? 'critical' : ''}">
+                            <div class="main-timer mono ${!this.isRunning ? 'dim' : (this.timeLeft < 60 && !this.isExtended ? 'critical' : '')}">
                                 ${this.currentLevel === this.blindLevels.length - 1 ? '∞' : 
                                   this.isExtended ? 'EXT' : this.formatTime(this.timeLeft)}
                             </div>
