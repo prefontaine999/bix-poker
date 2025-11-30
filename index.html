@@ -996,7 +996,7 @@ this.blindLevels = [
                 const currentPayouts = this.getCurrentPayouts();
                 return currentPayouts.slice(0, this.placesPaid).map((amount, index) => {
                     const medal = index < 3 ? medals[index] + ' ' : '';
-                    return `${medal}${this.getOrdinal(index + 1)}: ${this.formatNumber(amount)} THB`;
+                    return `${medal}${this.getOrdinal(index + 1)}: ${this.formatNumberCompact(amount)} THB`;
                 }).join(' • ');
             }
 
@@ -1392,7 +1392,8 @@ this.blindLevels = [
             renderGame() {
                 const cur = this.blindLevels[this.currentLevel];
                 const pool = (this.setupData.totalPlayers * this.setupData.buyIn) + (this.rebuys * this.setupData.buyIn);
-                const avgChips = Math.round((this.setupData.totalPlayers * this.setupData.startingStack) / this.playersRemaining);
+                const totalChipsInPlay = (this.setupData.totalPlayers * this.setupData.startingStack) + (this.rebuys * this.setupData.startingStack);
+                const avgChips = Math.round(totalChipsInPlay / this.playersRemaining);
                 
                 // UPDATED: Logic to remove decimals if BB > 10
                 const rawBB = avgChips / cur.big;
@@ -1412,10 +1413,32 @@ this.blindLevels = [
                                     <label>Players</label>
                                     <div class="value">${this.playersRemaining}/${this.setupData.totalPlayers}</div>
                                 </div>
-                                <div class="stat-block">
-                                    <label>Prize Pool</label>
-                                    <div class="value mono">${this.formatNumberCompact(pool)}</div>
-                                </div>
+                                ${this.setupData.rebuyCloseLevel > 0 ? `
+                                    <div class="stat-block">
+                                        <label>Rebuys (close L${this.setupData.rebuyCloseLevel})</label>
+                                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                                            <div class="value mono">${this.rebuys}</div>
+                                            <span style="
+                                                padding: 0.2rem 0.5rem; 
+                                                border-radius: 0.25rem; 
+                                                font-size: 0.6rem; 
+                                                font-weight: 600;
+                                                text-transform: uppercase;
+                                                letter-spacing: 0.05em;
+                                                ${this.areRebuysOpen() ? 
+                                                    'background: rgba(16, 185, 129, 0.15); color: var(--success-color); border: 1px solid var(--success-color);' : 
+                                                    'background: rgba(239, 68, 68, 0.15); color: var(--danger-color); border: 1px solid var(--danger-color);'}
+                                            ">
+                                                ${this.areRebuysOpen() ? 'OPEN' : 'CLOSED'}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ` : `
+                                    <div class="stat-block">
+                                        <label>Prize Pool</label>
+                                        <div class="value mono">${this.formatNumberCompact(pool)}</div>
+                                    </div>
+                                `}
                                 <div class="stat-block">
                                     <label>Avg Chips</label>
                                     <div class="value mono">${this.formatNumberCompact(avgChips)}</div>
@@ -1443,7 +1466,7 @@ this.blindLevels = [
                             </div>
                             
                             <div class="ticker-bar">
-                                ${this.getPayoutTickerContent()}
+                                PRIZE POOL: ${this.formatNumberCompact(pool)} THB • ${this.getPayoutTickerContent()}
                             </div>
 
                             <div class="main-timer mono ${!this.isRunning ? 'dim' : (this.timeLeft < 60 && !this.isExtended ? 'critical' : '')}">
