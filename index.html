@@ -723,6 +723,11 @@ this.blindLevels = [
                     buyIn: 2000,
                     rebuyCloseLevel: 0
                 };
+                
+                // Variable level length feature
+                this.variableLevelLength = false;
+                this.levelLengthConditions = []; // [{playersRemaining: 5, minutes: 15}, ...]
+                this.activeLevelDuration = null; // Track the active (possibly reduced) duration
                 this.playerNames = [];
                 this.originalPlayerNames = [];
                 this.tableCount = 1;
@@ -877,7 +882,15 @@ this.blindLevels = [
                     } else if (this.timeLeft === 0 && this.isRunning && !this.isExtended && !isLastLevel) {
                         if (this.currentLevel < this.blindLevels.length - 1) {
                             this.currentLevel++;
+                            
+                            // Apply variable level length - check for new shorter duration
+                            const effectiveDuration = this.getEffectiveLevelDuration();
+                            if (this.activeLevelDuration === null || effectiveDuration < this.activeLevelDuration) {
+                                this.activeLevelDuration = effectiveDuration;
+                            }
+                            this.totalTime = this.activeLevelDuration * 60;
                             this.timeLeft = this.totalTime;
+                            
                             this.isExtended = false;
                             this.userIsScrolling = false; // Allow auto-scroll on level change
                             this.render();
@@ -1116,6 +1129,54 @@ this.blindLevels = [
                                             ${icons.Plus}
                                         </button>
                                     </div>
+                                </div>
+
+                                <div class="setup-group">
+                                    <div style="display: flex; justify-content: center; align-items: center; gap: 0.75rem;">
+                                        <label class="setup-label" style="margin-bottom: 0;">Variable Level Length</label>
+                                        <input type="checkbox" 
+                                            ${this.variableLevelLength ? 'checked' : ''} 
+                                            onchange="app.toggleVariableLevelLength()"
+                                            style="width: 20px; height: 20px; accent-color: var(--accent-color);">
+                                    </div>
+                                    
+                                    ${this.variableLevelLength ? `
+                                        <div style="background: rgba(0, 0, 0, 0.3); border: 1px solid #333; border-radius: 0.5rem; padding: 1rem; margin-top: 0.5rem;">
+                                            ${this.levelLengthConditions.length > 0 ? `
+                                                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
+                                                    ${this.levelLengthConditions.map((cond, index) => `
+                                                        <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255, 255, 255, 0.03); border-radius: 0.375rem; padding: 0.75rem 1rem; border: 1px solid #444;">
+                                                            <span style="font-size: 0.9rem;">
+                                                                Once <strong>${cond.playersRemaining}</strong> players remain → <strong>${cond.minutes}</strong> min
+                                                            </span>
+                                                            <button class="btn btn-icon" style="width: 1.75rem; height: 1.75rem; font-size: 1rem;" onclick="app.removeCondition(${index})">
+                                                                ×
+                                                            </button>
+                                                        </div>
+                                                    `).join('')}
+                                                </div>
+                                            ` : `
+                                                <p style="color: var(--text-dim); font-size: 0.8rem; text-align: center; margin-bottom: 1rem;">
+                                                    No conditions set. Add a condition below.
+                                                </p>
+                                            `}
+                                            
+                                            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: center;">
+                                                <span style="color: var(--text-dim); font-size: 0.85rem;">Once</span>
+                                                <input type="number" id="conditionPlayers" min="2" max="${this.setupData.totalPlayers - 1}" 
+                                                    value="${Math.min(this.setupData.totalPlayers - 1, 5)}"
+                                                    class="setup-input" style="width: 60px; padding: 0.5rem;">
+                                                <span style="color: var(--text-dim); font-size: 0.85rem;">players remain →</span>
+                                                <input type="number" id="conditionMinutes" min="1" max="${this.setupData.levelDuration - 1}" 
+                                                    value="${Math.max(1, this.setupData.levelDuration - 5)}"
+                                                    class="setup-input" style="width: 60px; padding: 0.5rem;">
+                                                <span style="color: var(--text-dim); font-size: 0.85rem;">min</span>
+                                                <button class="btn" style="padding: 0.5rem 1rem;" onclick="app.addCondition()">
+                                                    Add
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ` : ''}
                                 </div>
 
                                 <div class="setup-group">
@@ -1645,6 +1706,11 @@ this.blindLevels = [
                     this.payouts = new Array(this.placesPaid).fill(0);
                 }
                 
+                // Remove conditions that would now be invalid (>= new total players)
+                this.levelLengthConditions = this.levelLengthConditions.filter(
+                    cond => cond.playersRemaining < this.setupData.totalPlayers
+                );
+                
                 this.render();
             }
 
@@ -1655,7 +1721,118 @@ this.blindLevels = [
 
             adjustDuration(delta) {
                 this.setupData.levelDuration = Math.max(1, Math.min(60, this.setupData.levelDuration + delta));
+                // Remove any conditions that would now be invalid (>= new base duration)
+                this.levelLengthConditions = this.levelLengthConditions.filter(
+                    cond => cond.minutes < this.setupData.levelDuration
+                );
                 this.render();
+            }
+
+            toggleVariableLevelLength() {
+                this.variableLevelLength = !this.variableLevelLength;
+                if (!this.variableLevelLength) {
+                    this.levelLengthConditions = [];
+                }
+                this.render();
+            }
+
+            addCondition() {
+                const playersInput = document.getElementById('conditionPlayers');
+                const minutesInput = document.getElementById('conditionMinutes');
+                
+                const playersRemaining = parseInt(playersInput.value);
+                const minutes = parseInt(minutesInput.value);
+                
+                // Validation
+                if (isNaN(playersRemaining) || isNaN(minutes)) {
+                    alert('Please enter valid numbers');
+                    return;
+                }
+                
+                if (playersRemaining < 2 || playersRemaining >= this.setupData.totalPlayers) {
+                    alert(`Players must be between 2 and ${this.setupData.totalPlayers - 1}`);
+                    return;
+                }
+                
+                if (minutes >= this.setupData.levelDuration) {
+                    alert(`Minutes must be less than base duration (${this.setupData.levelDuration} min)`);
+                    return;
+                }
+                
+                if (minutes < 1) {
+                    alert('Minutes must be at least 1');
+                    return;
+                }
+                
+                // Check if condition for this player count already exists
+                const existingIndex = this.levelLengthConditions.findIndex(
+                    cond => cond.playersRemaining === playersRemaining
+                );
+                
+                if (existingIndex !== -1) {
+                    // Update existing condition
+                    this.levelLengthConditions[existingIndex].minutes = minutes;
+                } else {
+                    // Add new condition
+                    this.levelLengthConditions.push({ playersRemaining, minutes });
+                }
+                
+                // Sort by player count descending (more players = higher in list)
+                this.levelLengthConditions.sort((a, b) => b.playersRemaining - a.playersRemaining);
+                
+                // Validate that each lower player count has shorter (or equal) time
+                let valid = true;
+                let prevMinutes = this.setupData.levelDuration;
+                for (const cond of this.levelLengthConditions) {
+                    if (cond.minutes > prevMinutes) {
+                        valid = false;
+                        break;
+                    }
+                    prevMinutes = cond.minutes;
+                }
+                
+                if (!valid) {
+                    // Remove the just-added condition
+                    if (existingIndex !== -1) {
+                        // Can't easily restore, just warn
+                        alert('Each condition must have equal or shorter time than conditions with more players');
+                    } else {
+                        this.levelLengthConditions = this.levelLengthConditions.filter(
+                            cond => cond.playersRemaining !== playersRemaining
+                        );
+                        alert('Each condition must have equal or shorter time than conditions with more players');
+                    }
+                }
+                
+                this.render();
+            }
+
+            removeCondition(index) {
+                this.levelLengthConditions.splice(index, 1);
+                this.render();
+            }
+
+            getEffectiveLevelDuration() {
+                // Returns the level duration that should be used based on current player count
+                if (!this.variableLevelLength || this.levelLengthConditions.length === 0) {
+                    return this.setupData.levelDuration;
+                }
+                
+                // Find the minimum duration among all applicable conditions
+                let applicableMinutes = this.setupData.levelDuration;
+                
+                for (const cond of this.levelLengthConditions) {
+                    if (this.playersRemaining <= cond.playersRemaining && cond.minutes < applicableMinutes) {
+                        applicableMinutes = cond.minutes;
+                    }
+                }
+                
+                // If we already have an active reduced duration, don't go back up
+                if (this.activeLevelDuration !== null && this.activeLevelDuration < applicableMinutes) {
+                    return this.activeLevelDuration;
+                }
+                
+                return applicableMinutes;
             }
 
             adjustStack(delta) {
@@ -1809,6 +1986,7 @@ this.blindLevels = [
 
             startTournament() {
                 this.playersRemaining = this.setupData.totalPlayers;
+                this.activeLevelDuration = this.setupData.levelDuration; // Start with base duration
                 this.totalTime = this.setupData.levelDuration * 60;
                 this.timeLeft = this.setupData.levelDuration * 60;
                 this.currentLevel = 0;
@@ -1936,7 +2114,15 @@ this.blindLevels = [
             nextLevel() {
                 if (this.currentLevel < this.blindLevels.length - 1) {
                     this.currentLevel++;
+                    
+                    // Apply variable level length - check for new shorter duration
+                    const effectiveDuration = this.getEffectiveLevelDuration();
+                    if (this.activeLevelDuration === null || effectiveDuration < this.activeLevelDuration) {
+                        this.activeLevelDuration = effectiveDuration;
+                    }
+                    this.totalTime = this.activeLevelDuration * 60;
                     this.timeLeft = this.totalTime;
+                    
                     this.isExtended = false;
                     this.userIsScrolling = false; // Allow auto-scroll on explicit level change
                     this.render();
@@ -1947,6 +2133,8 @@ this.blindLevels = [
             prevLevel() {
                 if (this.currentLevel > 0) {
                     this.currentLevel--;
+                    // Keep using current active duration (don't increase it back)
+                    this.totalTime = (this.activeLevelDuration || this.setupData.levelDuration) * 60;
                     this.timeLeft = this.totalTime;
                     this.isExtended = false;
                     this.userIsScrolling = false; // Allow auto-scroll on explicit level change
