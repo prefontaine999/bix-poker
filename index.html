@@ -1087,11 +1087,17 @@ this.blindLevels = [
             render() {
                 const app = document.getElementById('app');
                 
-                // Always save scroll position before render (DOM will be destroyed)
+                // Save scroll positions before render (DOM will be destroyed)
                 const timeline = document.querySelector('.rail-timeline');
-                let scrollPosition = 0;
+                let timelineScroll = 0;
                 if (timeline) {
-                    scrollPosition = timeline.scrollTop;
+                    timelineScroll = timeline.scrollTop;
+                }
+                
+                const modalWrapper = document.querySelector('.modal-wrapper');
+                let modalScroll = 0;
+                if (modalWrapper) {
+                    modalScroll = modalWrapper.scrollTop;
                 }
                 
                 let content = '';
@@ -1116,11 +1122,18 @@ this.blindLevels = [
                 
                 app.innerHTML = content;
                 
-                // Always restore scroll position to prevent jumping
-                if (timeline && scrollPosition > 0) {
+                // Restore scroll positions
+                if (timelineScroll > 0) {
                     const newTimeline = document.querySelector('.rail-timeline');
                     if (newTimeline) {
-                        newTimeline.scrollTop = scrollPosition;
+                        newTimeline.scrollTop = timelineScroll;
+                    }
+                }
+                
+                if (modalScroll > 0) {
+                    const newModal = document.querySelector('.modal-wrapper');
+                    if (newModal) {
+                        newModal.scrollTop = modalScroll;
                     }
                 }
             }
