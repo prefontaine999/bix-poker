@@ -563,12 +563,6 @@
             color: var(--text-main);
         }
         
-        @keyframes slot-spin {
-            0% { transform: translateY(0); opacity: 1; }
-            50% { transform: translateY(-10px); opacity: 0.5; }
-            100% { transform: translateY(0); opacity: 1; }
-        }
-        
         .shuffle-slot-name.spinning {
             animation: slot-spin 0.1s ease-in-out;
         }
@@ -580,17 +574,6 @@
             height: 10px;
             pointer-events: none;
             z-index: 9999;
-        }
-        
-        @keyframes confetti-fall {
-            0% {
-                transform: translateY(-100vh) rotate(0deg);
-                opacity: 1;
-            }
-            100% {
-                transform: translateY(100vh) rotate(720deg);
-                opacity: 0;
-            }
         }
 
         /* ===== MODAL/WARNING ===== */
@@ -826,7 +809,12 @@ this.blindLevels = [
             setupFullscreenListener() {
                 document.addEventListener('fullscreenchange', () => {
                     this.isFullscreen = !!document.fullscreenElement;
-                    this.render();
+                    // Update just the fullscreen button icon in control panel
+                    const settingsSection = document.querySelector('.control-panel-section:last-child .control-panel-buttons');
+                    if (settingsSection) {
+                        const fsBtn = settingsSection.querySelector('button:nth-child(3)');
+                        if (fsBtn) fsBtn.innerHTML = this.isFullscreen ? icons.Minimize : icons.Maximize;
+                    }
                 });
             }
             
@@ -878,7 +866,7 @@ this.blindLevels = [
                             this.playLevelEndSound();
                         }
                         
-                        this.render();
+                        this.updateTimerDisplay();
                     } else if (this.timeLeft === 0 && this.isRunning && !this.isExtended && !isLastLevel) {
                         if (this.currentLevel < this.blindLevels.length - 1) {
                             this.currentLevel++;
@@ -904,6 +892,60 @@ this.blindLevels = [
                 }, 1000);
             }
 
+            // Lightweight timer-only DOM update — no innerHTML rebuild
+            updateTimerDisplay() {
+                const timerEl = document.querySelector('.main-timer');
+                const progressEl = document.querySelector('.progress-line');
+                if (!timerEl || !progressEl) return;
+                
+                const isLastLevel = this.currentLevel === this.blindLevels.length - 1;
+                const timeStr = isLastLevel ? '∞' : (this.isExtended ? 'EXT' : this.formatTime(this.timeLeft));
+                
+                timerEl.textContent = timeStr;
+                
+                // Update critical/dim classes
+                timerEl.classList.toggle('dim', !this.isRunning);
+                timerEl.classList.toggle('critical', this.isRunning && this.timeLeft < 60 && !this.isExtended);
+                
+                // Update progress bar
+                const pct = isLastLevel ? 100 : ((this.totalTime - this.timeLeft) / this.totalTime) * 100;
+                progressEl.style.width = pct + '%';
+                progressEl.classList.toggle('critical', this.timeLeft < 60 && !this.isExtended);
+            }
+
+            // Update just the stats section in the rail (players, rebuys, avg chips, avg BB)
+            updateStats() {
+                const cur = this.blindLevels[this.currentLevel];
+                const pool = (this.setupData.totalPlayers * this.setupData.buyIn) + (this.rebuys * this.setupData.buyIn);
+                const totalChipsInPlay = (this.setupData.totalPlayers * this.setupData.startingStack) + (this.rebuys * this.setupData.startingStack);
+                const avgChips = Math.round(totalChipsInPlay / this.playersRemaining);
+                const rawBB = avgChips / cur.big;
+                const avgBB = rawBB.toFixed(rawBB >= 10 ? 0 : 1);
+                
+                const statsEl = document.querySelector('.rail-stats');
+                if (!statsEl) return;
+                
+                const values = statsEl.querySelectorAll('.stat-block .value');
+                if (values[0]) values[0].textContent = `${this.playersRemaining}/${this.setupData.totalPlayers}`;
+                
+                // Second stat block depends on whether rebuys are enabled
+                if (this.setupData.rebuyCloseLevel > 0) {
+                    const rebuyVal = statsEl.querySelector('.stat-block:nth-child(2) .value.mono');
+                    if (rebuyVal) rebuyVal.textContent = this.rebuys;
+                } else {
+                    if (values[1]) values[1].textContent = this.formatNumberCompact(pool);
+                }
+                
+                if (values[2]) values[2].textContent = this.formatNumberCompact(avgChips);
+                if (values[3]) values[3].textContent = avgBB;
+                
+                // Update ticker bar
+                const ticker = document.querySelector('.ticker-bar');
+                if (ticker) {
+                    ticker.textContent = `PRIZE POOL: ${this.formatNumberCompact(pool)} THB • ${this.getPayoutTickerContent()}`;
+                }
+            }
+
             initAudioContext() {
                 if (!this.audioContextInitialized) {
                     try {
@@ -920,9 +962,12 @@ this.blindLevels = [
             playWarningSound() {
                 if (!this.soundEnabled) return;
                 try {
-                    const audio = new Audio('sounds/mixkit-repeating-arcade-beep-1084.mp3');
-                    audio.volume = 0.8;
-                    audio.play().catch(e => console.log('Could not play warning sound:', e));
+                    if (!this._warningAudio) {
+                        this._warningAudio = new Audio('sounds/mixkit-repeating-arcade-beep-1084.mp3');
+                        this._warningAudio.volume = 0.8;
+                    }
+                    this._warningAudio.currentTime = 0;
+                    this._warningAudio.play().catch(e => console.log('Could not play warning sound:', e));
                 } catch (e) {
                     console.log('Could not play warning sound:', e);
                 }
@@ -931,9 +976,12 @@ this.blindLevels = [
             playLevelEndSound() {
                 if (!this.soundEnabled) return;
                 try {
-                    const audio = new Audio('sounds/mixkit-arcade-race-game-countdown-1952.mp3');
-                    audio.volume = 0.8;
-                    audio.play().catch(e => console.log('Could not play level end sound:', e));
+                    if (!this._levelEndAudio) {
+                        this._levelEndAudio = new Audio('sounds/mixkit-arcade-race-game-countdown-1952.mp3');
+                        this._levelEndAudio.volume = 0.8;
+                    }
+                    this._levelEndAudio.currentTime = 0;
+                    this._levelEndAudio.play().catch(e => console.log('Could not play level end sound:', e));
                 } catch (e) {
                     console.log('Could not play level end sound:', e);
                 }
@@ -2112,26 +2160,34 @@ this.blindLevels = [
                     if (this.playersRemaining === 1) {
                         this.createConfetti();
                     }
-                    this.render();
+                    this.updateStats();
                 }
             }
 
             addPlayer() {
                 if (this.playersRemaining < this.setupData.totalPlayers) {
                     this.playersRemaining++;
-                    this.render();
+                    this.updateStats();
                 }
             }
 
             toggleTimer() {
                 this.initAudioContext();
                 this.isRunning = !this.isRunning;
-                this.render();
+                
+                // Update status badge
+                const badge = document.querySelector('.status-badge');
+                if (badge) {
+                    badge.classList.toggle('running', this.isRunning);
+                    badge.classList.toggle('paused', !this.isRunning);
+                    badge.innerHTML = `<div class="status-indicator"></div>${this.isRunning ? 'Running' : 'Paused'}`;
+                }
+                this.updateTimerDisplay();
             }
 
             addTwoMinutes() {
                 this.timeLeft += 120;
-                this.render();
+                this.updateTimerDisplay();
             }
 
             nextLevel() {
@@ -2168,12 +2224,26 @@ this.blindLevels = [
 
             toggleExtend() {
                 this.isExtended = !this.isExtended;
-                this.render();
+                this.updateTimerDisplay();
+                // Update the extend button text in control panel
+                const extendBtn = document.querySelector('.control-panel-section:first-child .control-panel-buttons');
+                if (extendBtn) {
+                    const btn = extendBtn.querySelector('button:last-child');
+                    if (btn) {
+                        btn.className = `btn ${this.isExtended ? 'btn-primary' : 'btn-secondary'}`;
+                        btn.textContent = this.isExtended ? 'Extended' : 'Extend';
+                    }
+                }
             }
 
             toggleSound() {
                 this.soundEnabled = !this.soundEnabled;
-                this.render();
+                // Update the sound button icon in control panel
+                const settingsSection = document.querySelector('.control-panel-section:last-child .control-panel-buttons');
+                if (settingsSection) {
+                    const soundBtn = settingsSection.querySelector('button:first-child');
+                    if (soundBtn) soundBtn.innerHTML = this.soundEnabled ? icons.Volume2 : icons.VolumeX;
+                }
             }
 
             testSound() {
@@ -2183,20 +2253,27 @@ this.blindLevels = [
             addRebuy() {
                 if (this.areRebuysOpen()) {
                     this.rebuys++;
-                    this.render();
+                    this.updateStats();
                 }
             }
 
             undoRebuy() {
                 if (this.rebuys > 0) {
                     this.rebuys--;
-                    this.render();
+                    this.updateStats();
                 }
             }
 
             toggleControlPanel() {
                 this.controlPanelOpen = !this.controlPanelOpen;
-                this.render();
+                const overlay = document.querySelector('.control-panel-overlay');
+                const panel = document.querySelector('.control-panel');
+                if (overlay && panel) {
+                    overlay.classList.toggle('open', this.controlPanelOpen);
+                    panel.classList.toggle('open', this.controlPanelOpen);
+                } else {
+                    this.render();
+                }
             }
         }
 
