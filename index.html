@@ -30,6 +30,10 @@
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
+        html {
+            color-scheme: dark;
+        }
+        
         body {
             background: var(--bg-root);
             color: var(--text-main);
@@ -481,6 +485,13 @@
         .setup-input:focus {
             outline: none;
             border-color: #666;
+        }
+        
+        /* Always show number input spinner arrows */
+        .setup-input[type="number"]::-webkit-inner-spin-button,
+        .setup-input[type="number"]::-webkit-outer-spin-button {
+            opacity: 1;
+            height: auto;
         }
         
         .setup-select {
@@ -1122,20 +1133,22 @@ this.blindLevels = [
                 
                 app.innerHTML = content;
                 
-                // Restore scroll positions
-                if (timelineScroll > 0) {
-                    const newTimeline = document.querySelector('.rail-timeline');
-                    if (newTimeline) {
-                        newTimeline.scrollTop = timelineScroll;
+                // Restore scroll positions (use rAF for Safari which needs a frame to lay out new DOM)
+                requestAnimationFrame(() => {
+                    if (timelineScroll > 0) {
+                        const newTimeline = document.querySelector('.rail-timeline');
+                        if (newTimeline) {
+                            newTimeline.scrollTop = timelineScroll;
+                        }
                     }
-                }
-                
-                if (modalScroll > 0) {
-                    const newModal = document.querySelector('.modal-wrapper');
-                    if (newModal) {
-                        newModal.scrollTop = modalScroll;
+                    
+                    if (modalScroll > 0) {
+                        const newModal = document.querySelector('.modal-wrapper');
+                        if (newModal) {
+                            newModal.scrollTop = modalScroll;
+                        }
                     }
-                }
+                });
             }
 
             // Render Methods
