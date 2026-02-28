@@ -2,7 +2,13 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Risithai Poker">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#000000">
+    <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22Risithai%20Poker%20Tour%22%2C%22short_name%22%3A%22Risithai%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23000000%22%2C%22theme_color%22%3A%22%23000000%22%7D">
     <title>Risithai Tournament Timer</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -32,6 +38,7 @@
         
         html {
             color-scheme: dark;
+            touch-action: manipulation;
         }
         
         body {
@@ -40,6 +47,11 @@
             font-family: var(--font-ui);
             height: 100vh;
             overflow: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+            overscroll-behavior: none;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
         }
 
         /* ===== UTILITIES ===== */
@@ -596,6 +608,8 @@
             font-family: var(--font-mono);
             text-align: center;
             width: 100%;
+            -webkit-user-select: text;
+            user-select: text;
         }
         
         .setup-input:focus {
