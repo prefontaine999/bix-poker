@@ -132,6 +132,43 @@
         .timeline-level { width: 40px; font-size: 0.8rem; opacity: 0.5; }
         .timeline-blinds { flex: 1; font-weight: 500; text-align: right; }
 
+        .timeline-break {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.4rem 2rem;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-dim);
+            opacity: 0.4;
+            border-bottom: 1px solid #0d0d0d;
+        }
+        .timeline-break.break-active {
+            color: #f59e0b;
+            border-left: 3px solid #f59e0b;
+            padding-left: calc(2rem - 3px);
+            opacity: 1;
+            background: rgba(245, 158, 11, 0.04);
+        }
+        .timeline-break.break-past { opacity: 0.15; }
+
+        .timeline-rebuy-close {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.4rem 2rem;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--danger-color);
+            border-left: 2px solid var(--danger-color);
+            border-bottom: 1px solid rgba(239, 68, 68, 0.1);
+            background: rgba(239, 68, 68, 0.04);
+            opacity: 0.75;
+        }
+        .timeline-rebuy-close.past { opacity: 0.2; background: none; border-left-color: transparent; }
+
         /* --- RIGHT ZONE (ACTION) --- */
         .action-zone {
             flex: 1;
@@ -849,10 +886,23 @@ this.blindLevels = [
                     buyIn: 2000,
                     rebuyCloseLevel: 0
                 };
+                this.survivorChipsEnabled = false;
+                this.survivorChipValue = 10000;
+                this.survivorBonusTotal = 0;
                 
+                // Breaks feature
+                this.breaksEnabled = false;
+                this.breakFrequency = 5;
+                this.breakDuration = 5;
+                this.isOnBreak = false;
+                this.breakTimeLeft = 0;
+                this.breakTotalTime = 0;
+
                 // Variable level length feature
                 this.variableLevelLength = false;
+                this.levelLengthMode = 'players'; // 'players' | 'levels'
                 this.levelLengthConditions = []; // [{playersRemaining: 5, minutes: 15}, ...]
+                this.levelBasedConditions = []; // [{fromLevel: 6, minutes: 20}, ...]
                 this.activeLevelDuration = null; // Track the active (possibly reduced) duration
                 this.playerNames = [];
                 this.originalPlayerNames = [];
@@ -928,7 +978,7 @@ this.blindLevels = [
                     
                     if (e.code === 'KeyT') {
                         e.preventDefault();
-                        if (!this.showSetup && !this.showPayouts && !this.showSeating && !this.showRedraw && this.currentLevel < this.blindLevels.length - 1) {
+                        if (!this.showSetup && !this.showPayouts && !this.showSeating && !this.showRedraw && !this.isOnBreak && this.currentLevel < this.blindLevels.length - 1) {
                             this.addTwoMinutes();
                         }
                     }
@@ -996,37 +1046,54 @@ this.blindLevels = [
                 if (this.timerInterval) clearInterval(this.timerInterval);
                 
                 this.timerInterval = setInterval(() => {
+                    // Break countdown takes priority
+                    if (this.isOnBreak) {
+                        if (this.isRunning && this.breakTimeLeft > 0) {
+                            this.breakTimeLeft--;
+                            this.updateBreakDisplay();
+                        } else if (this.isRunning && this.breakTimeLeft === 0) {
+                            this.endBreak();
+                        }
+                        return;
+                    }
+
                     const isLastLevel = this.currentLevel === this.blindLevels.length - 1;
-                    
+
                     if (this.isRunning && this.timeLeft > 0 && !isLastLevel) {
                         this.timeLeft--;
-                        
+
                         if (this.timeLeft === 60 && !this.isExtended) {
                             this.playWarningSound();
                         }
-                        
                         if (this.timeLeft === 2 && !this.isExtended) {
                             this.playLevelEndSound();
                         }
-                        
+
                         this.updateTimerDisplay();
                     } else if (this.timeLeft === 0 && this.isRunning && !this.isExtended && !isLastLevel) {
                         if (this.currentLevel < this.blindLevels.length - 1) {
-                            this.currentLevel++;
-                            
-                            // Apply variable level length - check for new shorter duration
-                            const effectiveDuration = this.getEffectiveLevelDuration();
-                            if (this.activeLevelDuration === null || effectiveDuration < this.activeLevelDuration) {
-                                this.activeLevelDuration = effectiveDuration;
+                            const completedLevelNum = this.blindLevels[this.currentLevel].level;
+                            if (this.breaksEnabled && completedLevelNum % this.breakFrequency === 0) {
+                                this.startBreak();
+                            } else {
+                                this.currentLevel++;
+
+                                // Apply variable level length
+                                const effectiveDuration = this.getEffectiveLevelDuration();
+                                if (this.levelLengthMode === 'levels' && this.variableLevelLength) {
+                                    this.activeLevelDuration = effectiveDuration;
+                                } else if (this.activeLevelDuration === null || effectiveDuration < this.activeLevelDuration) {
+                                    this.activeLevelDuration = effectiveDuration;
+                                }
+                                this.totalTime = this.activeLevelDuration * 60;
+                                this.timeLeft = this.totalTime;
+
+                                this.isExtended = false;
+                                this.userIsScrolling = false;
+                                this.checkSurvivorBonus();
+                                this.render();
+                                this.scrollToCurrentLevel();
                             }
-                            this.totalTime = this.activeLevelDuration * 60;
-                            this.timeLeft = this.totalTime;
-                            
-                            this.isExtended = false;
-                            this.userIsScrolling = false; // Allow auto-scroll on level change
-                            this.render();
-                            // Scroll when level changes
-                            this.scrollToCurrentLevel();
                         } else {
                             this.isRunning = false;
                             this.render();
@@ -1060,7 +1127,7 @@ this.blindLevels = [
             updateStats() {
                 const cur = this.blindLevels[this.currentLevel];
                 const pool = (this.setupData.totalPlayers * this.setupData.buyIn) + (this.rebuys * this.setupData.buyIn);
-                const totalChipsInPlay = (this.setupData.totalPlayers * this.setupData.startingStack) + (this.rebuys * this.setupData.startingStack);
+                const totalChipsInPlay = (this.setupData.totalPlayers * this.setupData.startingStack) + (this.rebuys * this.setupData.startingStack) + this.survivorBonusTotal;
                 const avgChips = Math.round(totalChipsInPlay / this.playersRemaining);
                 const rawBB = avgChips / cur.big;
                 const avgBB = rawBB.toFixed(rawBB >= 10 ? 0 : 1);
@@ -1340,47 +1407,135 @@ this.blindLevels = [
                                 <div class="setup-group">
                                     <div style="display: flex; justify-content: center; align-items: center; gap: 0.75rem;">
                                         <label class="setup-label" style="margin-bottom: 0;">Variable Level Length</label>
-                                        <input type="checkbox" 
-                                            ${this.variableLevelLength ? 'checked' : ''} 
+                                        <input type="checkbox"
+                                            ${this.variableLevelLength ? 'checked' : ''}
                                             onchange="app.toggleVariableLevelLength()"
                                             style="width: 20px; height: 20px; accent-color: var(--accent-color);">
                                     </div>
-                                    
+
                                     ${this.variableLevelLength ? `
                                         <div style="background: rgba(0, 0, 0, 0.3); border: 1px solid #333; border-radius: 0.5rem; padding: 1rem; margin-top: 0.5rem;">
-                                            ${this.levelLengthConditions.length > 0 ? `
-                                                <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
-                                                    ${this.levelLengthConditions.map((cond, index) => `
-                                                        <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255, 255, 255, 0.03); border-radius: 0.375rem; padding: 0.75rem 1rem; border: 1px solid #444;">
-                                                            <span style="font-size: 0.9rem;">
-                                                                Once <strong>${cond.playersRemaining}</strong> players remain → <strong>${cond.minutes}</strong> min
+
+                                            <!-- Mode selector -->
+                                            <div style="display: flex; gap: 0.25rem; background: rgba(0,0,0,0.4); border-radius: 0.375rem; padding: 0.25rem; margin-bottom: 1rem;">
+                                                <button onclick="app.setLevelLengthMode('levels')"
+                                                    style="flex: 1; padding: 0.4rem 0; border-radius: 0.25rem; border: none; cursor: pointer; font-size: 0.8rem; font-family: var(--font-ui); transition: background 0.15s;
+                                                        background: ${this.levelLengthMode === 'levels' ? 'var(--accent-color)' : 'transparent'};
+                                                        color: ${this.levelLengthMode === 'levels' ? '#fff' : 'var(--text-dim)'};">
+                                                    By Level
+                                                </button>
+                                                <button onclick="app.setLevelLengthMode('players')"
+                                                    style="flex: 1; padding: 0.4rem 0; border-radius: 0.25rem; border: none; cursor: pointer; font-size: 0.8rem; font-family: var(--font-ui); transition: background 0.15s;
+                                                        background: ${this.levelLengthMode === 'players' ? 'var(--accent-color)' : 'transparent'};
+                                                        color: ${this.levelLengthMode === 'players' ? '#fff' : 'var(--text-dim)'};">
+                                                    By Players
+                                                </button>
+                                            </div>
+
+                                            ${this.levelLengthMode === 'levels' ? `
+                                                <!-- Level-based conditions -->
+                                                <div style="display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem;">
+                                                    <!-- Base duration row (implicit) -->
+                                                    <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.02); border-radius: 0.375rem; padding: 0.6rem 1rem; border: 1px solid #333;">
+                                                        <span style="font-size: 0.85rem; color: var(--text-dim);">
+                                                            Base (L1${this.levelBasedConditions.length > 0 ? '–L' + (this.levelBasedConditions[0].fromLevel - 1) : '+'})
+                                                        </span>
+                                                        <span style="font-size: 0.85rem; font-family: var(--font-mono);">${this.setupData.levelDuration} min</span>
+                                                    </div>
+                                                    ${this.levelBasedConditions.map((cond, index) => `
+                                                        <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border-radius: 0.375rem; padding: 0.6rem 1rem; border: 1px solid #444;">
+                                                            <span style="font-size: 0.85rem;">
+                                                                From <strong>L${cond.fromLevel}</strong>${index < this.levelBasedConditions.length - 1 ? '–L' + (this.levelBasedConditions[index + 1].fromLevel - 1) : '+'}
+                                                                → <strong>${cond.minutes} min</strong>
                                                             </span>
-                                                            <button class="btn btn-icon" style="width: 1.75rem; height: 1.75rem; font-size: 1rem;" onclick="app.removeCondition(${index})">
-                                                                ×
-                                                            </button>
+                                                            <button class="btn btn-icon" style="width: 1.75rem; height: 1.75rem; font-size: 1rem;" onclick="app.removeLevelCondition(${index})">×</button>
                                                         </div>
                                                     `).join('')}
                                                 </div>
+                                                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: center;">
+                                                    <span style="color: var(--text-dim); font-size: 0.85rem;">From level</span>
+                                                    <input type="number" id="conditionFromLevel" min="1" max="${this.blindLevels.length}"
+                                                        value="${Math.min(this.blindLevels.length, (this.levelBasedConditions.length > 0 ? this.levelBasedConditions[this.levelBasedConditions.length - 1].fromLevel + 1 : 2))}"
+                                                        class="setup-input" style="width: 60px; padding: 0.5rem;">
+                                                    <span style="color: var(--text-dim); font-size: 0.85rem;">→</span>
+                                                    <input type="number" id="conditionLevelMinutes" min="1" max="60"
+                                                        value="${Math.max(1, this.setupData.levelDuration - 5)}"
+                                                        class="setup-input" style="width: 60px; padding: 0.5rem;">
+                                                    <span style="color: var(--text-dim); font-size: 0.85rem;">min</span>
+                                                    <button class="btn" style="padding: 0.5rem 1rem;" onclick="app.addLevelCondition()">Add</button>
+                                                </div>
                                             ` : `
-                                                <p style="color: var(--text-dim); font-size: 0.8rem; text-align: center; margin-bottom: 1rem;">
-                                                    No conditions set. Add a condition below.
-                                                </p>
+                                                <!-- Players-based conditions -->
+                                                ${this.levelLengthConditions.length > 0 ? `
+                                                    <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1rem;">
+                                                        ${this.levelLengthConditions.map((cond, index) => `
+                                                            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255, 255, 255, 0.03); border-radius: 0.375rem; padding: 0.75rem 1rem; border: 1px solid #444;">
+                                                                <span style="font-size: 0.9rem;">
+                                                                    Once <strong>${cond.playersRemaining}</strong> players remain → <strong>${cond.minutes}</strong> min
+                                                                </span>
+                                                                <button class="btn btn-icon" style="width: 1.75rem; height: 1.75rem; font-size: 1rem;" onclick="app.removeCondition(${index})">×</button>
+                                                            </div>
+                                                        `).join('')}
+                                                    </div>
+                                                ` : `
+                                                    <p style="color: var(--text-dim); font-size: 0.8rem; text-align: center; margin-bottom: 1rem;">
+                                                        No conditions set. Add a condition below.
+                                                    </p>
+                                                `}
+                                                <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: center;">
+                                                    <span style="color: var(--text-dim); font-size: 0.85rem;">Once</span>
+                                                    <input type="number" id="conditionPlayers" min="2" max="${this.setupData.totalPlayers - 1}"
+                                                        value="${Math.min(this.setupData.totalPlayers - 1, 5)}"
+                                                        class="setup-input" style="width: 60px; padding: 0.5rem;">
+                                                    <span style="color: var(--text-dim); font-size: 0.85rem;">players remain →</span>
+                                                    <input type="number" id="conditionMinutes" min="1" max="${this.setupData.levelDuration - 1}"
+                                                        value="${Math.max(1, this.setupData.levelDuration - 5)}"
+                                                        class="setup-input" style="width: 60px; padding: 0.5rem;">
+                                                    <span style="color: var(--text-dim); font-size: 0.85rem;">min</span>
+                                                    <button class="btn" style="padding: 0.5rem 1rem;" onclick="app.addCondition()">Add</button>
+                                                </div>
                                             `}
-                                            
-                                            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: center;">
-                                                <span style="color: var(--text-dim); font-size: 0.85rem;">Once</span>
-                                                <input type="number" id="conditionPlayers" min="2" max="${this.setupData.totalPlayers - 1}" 
-                                                    value="${Math.min(this.setupData.totalPlayers - 1, 5)}"
-                                                    class="setup-input" style="width: 60px; padding: 0.5rem;">
-                                                <span style="color: var(--text-dim); font-size: 0.85rem;">players remain →</span>
-                                                <input type="number" id="conditionMinutes" min="1" max="${this.setupData.levelDuration - 1}" 
-                                                    value="${Math.max(1, this.setupData.levelDuration - 5)}"
-                                                    class="setup-input" style="width: 60px; padding: 0.5rem;">
-                                                <span style="color: var(--text-dim); font-size: 0.85rem;">min</span>
-                                                <button class="btn" style="padding: 0.5rem 1rem;" onclick="app.addCondition()">
-                                                    Add
-                                                </button>
+                                        </div>
+                                    ` : ''}
+                                </div>
+
+                                <div class="setup-group">
+                                    <div style="display: flex; justify-content: center; align-items: center; gap: 0.75rem;">
+                                        <label class="setup-label" style="margin-bottom: 0;">Breaks</label>
+                                        <input type="checkbox"
+                                            ${this.breaksEnabled ? 'checked' : ''}
+                                            onchange="app.toggleBreaks()"
+                                            style="width: 20px; height: 20px; accent-color: var(--accent-color);">
+                                    </div>
+
+                                    ${this.breaksEnabled ? `
+                                        <div style="background: rgba(0,0,0,0.3); border: 1px solid #333; border-radius: 0.5rem; padding: 1rem; margin-top: 0.5rem;">
+                                            <div style="display: flex; align-items: center; gap: 1rem;">
+                                                <div style="flex: 1; text-align: center;">
+                                                    <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); margin-bottom: 0.5rem;">Every</div>
+                                                    <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                                                        <button class="btn btn-icon" onclick="app.adjustBreakFrequency(-1)">${icons.Minus}</button>
+                                                        <span class="mono" style="font-size: 1.1rem; min-width: 2rem; text-align: center;">${this.breakFrequency}</span>
+                                                        <button class="btn btn-icon" onclick="app.adjustBreakFrequency(1)">${icons.Plus}</button>
+                                                    </div>
+                                                    <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.3rem;">levels</div>
+                                                </div>
+                                                <div style="width: 1px; height: 48px; background: #2a2a2a;"></div>
+                                                <div style="flex: 1; text-align: center;">
+                                                    <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); margin-bottom: 0.5rem;">Duration</div>
+                                                    <div style="display: flex; align-items: center; justify-content: center; gap: 0.5rem;">
+                                                        <button class="btn btn-icon" onclick="app.adjustBreakDuration(-1)">${icons.Minus}</button>
+                                                        <span class="mono" style="font-size: 1.1rem; min-width: 2rem; text-align: center;">${this.breakDuration}</span>
+                                                        <button class="btn btn-icon" onclick="app.adjustBreakDuration(1)">${icons.Plus}</button>
+                                                    </div>
+                                                    <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.3rem;">minutes</div>
+                                                </div>
                                             </div>
+                                            ${this.getBreakLevelNumbers().length > 0 ? `
+                                                <div style="margin-top: 0.75rem; font-size: 0.72rem; color: var(--text-dim); text-align: center; letter-spacing: 0.03em;">
+                                                    After levels: ${this.getBreakLevelNumbers().join(', ')}
+                                                </div>
+                                            ` : ''}
                                         </div>
                                     ` : ''}
                                 </div>
@@ -1409,6 +1564,34 @@ this.blindLevels = [
                                         </select>
                                     </div>
                                 </div>
+
+                                ${this.setupData.rebuyCloseLevel > 0 ? `
+                                <div class="setup-group">
+                                    <div style="display: flex; justify-content: center; align-items: center; gap: 0.75rem;">
+                                        <label class="setup-label" style="margin-bottom: 0;">Survivor Chips</label>
+                                        <input type="checkbox"
+                                            ${this.survivorChipsEnabled ? 'checked' : ''}
+                                            onchange="app.toggleSurvivorChips()"
+                                            style="width: 20px; height: 20px; accent-color: var(--accent-color);">
+                                    </div>
+
+                                    ${this.survivorChipsEnabled ? `
+                                        <div style="background: rgba(0,0,0,0.3); border: 1px solid #333; border-radius: 0.5rem; padding: 1rem; margin-top: 0.5rem;">
+                                            <div style="font-size: 0.72rem; color: var(--text-dim); text-align: center; margin-bottom: 0.75rem; line-height: 1.4;">
+                                                Awarded to players who didn't rebuy, at end of rebuy window
+                                            </div>
+                                            <div class="setup-control">
+                                                <button class="btn btn-icon" onclick="app.adjustSurvivorChipValue(-1000)">${icons.Minus}</button>
+                                                <div class="setup-value mono">${this.formatNumber(this.survivorChipValue)}</div>
+                                                <button class="btn btn-icon" onclick="app.adjustSurvivorChipValue(1000)">${icons.Plus}</button>
+                                            </div>
+                                            <div style="margin-top: 0.6rem; font-size: 0.7rem; color: var(--text-dim); text-align: center;">
+                                                Awarded after level ${this.setupData.rebuyCloseLevel}
+                                            </div>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                ` : ''}
 
                                 <div class="setup-info">
                                     <div style="margin-bottom: 0.5rem;">
@@ -1598,7 +1781,7 @@ this.blindLevels = [
             renderGame() {
                 const cur = this.blindLevels[this.currentLevel];
                 const pool = (this.setupData.totalPlayers * this.setupData.buyIn) + (this.rebuys * this.setupData.buyIn);
-                const totalChipsInPlay = (this.setupData.totalPlayers * this.setupData.startingStack) + (this.rebuys * this.setupData.startingStack);
+                const totalChipsInPlay = (this.setupData.totalPlayers * this.setupData.startingStack) + (this.rebuys * this.setupData.startingStack) + this.survivorBonusTotal;
                 const avgChips = Math.round(totalChipsInPlay / this.playersRemaining);
                 
                 // UPDATED: Logic to remove decimals if BB > 10
@@ -1621,7 +1804,7 @@ this.blindLevels = [
                                 </div>
                                 ${this.setupData.rebuyCloseLevel > 0 ? `
                                     <div class="stat-block">
-                                        <label>Rebuys (close L${this.setupData.rebuyCloseLevel})</label>
+                                        <label>Rebuys</label>
                                         <div style="display: flex; align-items: center; gap: 0.5rem;">
                                             <div class="value mono">${this.rebuys}</div>
                                             <span style="
@@ -1656,19 +1839,40 @@ this.blindLevels = [
                             </div>
 
                             <div class="rail-timeline">
-                                ${this.blindLevels.map((l, i) => `
-                                    <div class="timeline-item ${i === this.currentLevel ? 'active' : ''} ${i < this.currentLevel ? 'past' : ''}">
-                                        <div class="timeline-level mono">L${l.level}</div>
-                                        <div class="timeline-blinds mono">${this.formatNumber(l.small)} / ${this.formatNumber(l.big)}</div>
-                                    </div>
-                                `).join('')}
+                                ${(() => {
+                                    const breakPoints = this.getBreakPoints();
+                                    const currentLevelNum = this.blindLevels[this.currentLevel].level;
+                                    return this.blindLevels.map((l, i) => {
+                                        const levelRow = `
+                                            <div class="timeline-item ${i === this.currentLevel ? 'active' : ''} ${i < this.currentLevel ? 'past' : ''}">
+                                                <div class="timeline-level mono">L${l.level}</div>
+                                                <div class="timeline-blinds mono">${this.formatNumber(l.small)} / ${this.formatNumber(l.big)}</div>
+                                            </div>`;
+                                        const isRebuyClose = this.setupData.rebuyCloseLevel > 0 && l.level === this.setupData.rebuyCloseLevel;
+                                        const rebuyCloseRow = isRebuyClose ? `
+                                            <div class="timeline-rebuy-close ${currentLevelNum > this.setupData.rebuyCloseLevel ? 'past' : ''}">
+                                                <span>Rebuys close</span>
+                                                <span>after this level</span>
+                                            </div>` : '';
+                                        if (!breakPoints.has(l.level)) return levelRow + rebuyCloseRow;
+                                        const isActiveBreak = this.isOnBreak && currentLevelNum === l.level;
+                                        const isPastBreak = !this.isOnBreak && currentLevelNum > l.level;
+                                        const breakRow = `
+                                            <div class="timeline-break ${isActiveBreak ? 'break-active' : ''} ${isPastBreak ? 'break-past' : ''}">
+                                                <span>Break</span>
+                                                <span>${this.breakDuration} min</span>
+                                            </div>`;
+                                        return levelRow + rebuyCloseRow + breakRow;
+                                    }).join('');
+                                })()}
                             </div>
                         </div>
 
                         <div class="action-zone">
-                            <div class="status-badge ${this.isRunning ? 'running' : 'paused'}">
-                                <div class="status-indicator"></div>
-                                ${this.isRunning ? 'Running' : 'Paused'}
+                            <div class="status-badge ${this.isOnBreak ? 'running' : this.isRunning ? 'running' : 'paused'}"
+                                 style="${this.isOnBreak ? 'background:rgba(245,158,11,0.08);border-color:rgba(245,158,11,0.25);color:#f59e0b;' : ''}">
+                                <div class="status-indicator" style="${this.isOnBreak ? 'background:#f59e0b;' : ''}"></div>
+                                ${this.isOnBreak ? 'Break' : this.isRunning ? 'Running' : 'Paused'}
                             </div>
                             
                             <div class="ticker-bar">
@@ -1697,24 +1901,35 @@ this.blindLevels = [
                                 </button>
                             </div>
 
-                            <div class="main-timer mono ${!this.isRunning ? 'dim' : (this.timeLeft < 60 && !this.isExtended ? 'critical' : '')}">
-                                ${this.currentLevel === this.blindLevels.length - 1 ? '∞' : 
+                            <div class="main-timer mono ${this.isOnBreak ? (!this.isRunning ? 'dim' : '') : (!this.isRunning ? 'dim' : (this.timeLeft < 60 && !this.isExtended ? 'critical' : ''))}"
+                                 ${this.isOnBreak ? 'style="color:#f59e0b;"' : ''}>
+                                ${this.isOnBreak ? this.formatTime(this.breakTimeLeft) :
+                                  this.currentLevel === this.blindLevels.length - 1 ? '∞' :
                                   this.isExtended ? 'EXT' : this.formatTime(this.timeLeft)}
                             </div>
 
-                            <div class="main-blinds">
-                                <div class="blind-unit">
-                                    <div class="val mono">${this.formatNumber(cur.small)}</div>
-                                    <div class="lbl">Small Blind</div>
+                            ${this.isOnBreak ? `
+                                <div style="text-align:center;">
+                                    <div style="font-size:2.5rem;font-weight:800;color:#f59e0b;letter-spacing:0.05em;">BREAK</div>
                                 </div>
-                                <div class="blind-sep">/</div>
-                                <div class="blind-unit">
-                                    <div class="val mono">${this.formatNumber(cur.big)}</div>
-                                    <div class="lbl">Big Blind</div>
+                            ` : `
+                                <div class="main-blinds">
+                                    <div class="blind-unit">
+                                        <div class="val mono">${this.formatNumber(cur.small)}</div>
+                                        <div class="lbl">Small Blind</div>
+                                    </div>
+                                    <div class="blind-sep">/</div>
+                                    <div class="blind-unit">
+                                        <div class="val mono">${this.formatNumber(cur.big)}</div>
+                                        <div class="lbl">Big Blind</div>
+                                    </div>
                                 </div>
-                            </div>
+                            `}
 
-                            <div class="progress-line ${this.timeLeft < 60 && !this.isExtended ? 'critical' : ''}" style="width:${this.currentLevel === this.blindLevels.length - 1 ? '100' : pct}%"></div>
+                            <div class="progress-line ${!this.isOnBreak && this.timeLeft < 60 && !this.isExtended ? 'critical' : ''}"
+                                 style="width:${this.isOnBreak
+                                     ? (this.breakTotalTime > 0 ? ((this.breakTotalTime - this.breakTimeLeft) / this.breakTotalTime) * 100 : 0)
+                                     : this.currentLevel === this.blindLevels.length - 1 ? 100 : pct}%"></div>
                         </div>
                     </div>
                     
@@ -1738,12 +1953,12 @@ this.blindLevels = [
                                     ${icons.SkipForward}
                                 </button>
                                 
-                                <button onclick="app.addTwoMinutes()" ${this.currentLevel === this.blindLevels.length - 1 ? 'disabled' : ''} 
+                                <button onclick="app.addTwoMinutes()" ${this.currentLevel === this.blindLevels.length - 1 || this.isOnBreak ? 'disabled' : ''}
                                     class="btn btn-secondary" title="Add 2 minutes (T)">
                                     +2 min
                                 </button>
-                                
-                                <button onclick="app.toggleExtend()" ${this.currentLevel === this.blindLevels.length - 1 ? 'disabled' : ''} 
+
+                                <button onclick="app.toggleExtend()" ${this.currentLevel === this.blindLevels.length - 1 || this.isOnBreak ? 'disabled' : ''}
                                     class="btn ${this.isExtended ? 'btn-primary' : 'btn-secondary'}" title="Extend Level">
                                     ${this.isExtended ? 'Extended' : 'Extend'}
                                 </button>
@@ -1983,7 +2198,13 @@ this.blindLevels = [
                 this.variableLevelLength = !this.variableLevelLength;
                 if (!this.variableLevelLength) {
                     this.levelLengthConditions = [];
+                    this.levelBasedConditions = [];
                 }
+                this.render();
+            }
+
+            setLevelLengthMode(mode) {
+                this.levelLengthMode = mode;
                 this.render();
             }
 
@@ -2063,27 +2284,178 @@ this.blindLevels = [
                 this.render();
             }
 
+            addLevelCondition() {
+                const fromLevelInput = document.getElementById('conditionFromLevel');
+                const minutesInput = document.getElementById('conditionLevelMinutes');
+
+                const fromLevel = parseInt(fromLevelInput.value);
+                const minutes = parseInt(minutesInput.value);
+
+                if (isNaN(fromLevel) || isNaN(minutes)) {
+                    alert('Please enter valid numbers');
+                    return;
+                }
+
+                if (fromLevel < 1 || fromLevel > this.blindLevels.length) {
+                    alert(`Level must be between 1 and ${this.blindLevels.length}`);
+                    return;
+                }
+
+                if (minutes < 1) {
+                    alert('Minutes must be at least 1');
+                    return;
+                }
+
+                const existingIndex = this.levelBasedConditions.findIndex(c => c.fromLevel === fromLevel);
+                if (existingIndex !== -1) {
+                    this.levelBasedConditions[existingIndex].minutes = minutes;
+                } else {
+                    this.levelBasedConditions.push({ fromLevel, minutes });
+                }
+
+                this.levelBasedConditions.sort((a, b) => a.fromLevel - b.fromLevel);
+                this.render();
+            }
+
+            removeLevelCondition(index) {
+                this.levelBasedConditions.splice(index, 1);
+                this.render();
+            }
+
             getEffectiveLevelDuration() {
-                // Returns the level duration that should be used based on current player count
-                if (!this.variableLevelLength || this.levelLengthConditions.length === 0) {
+                if (!this.variableLevelLength) {
                     return this.setupData.levelDuration;
                 }
-                
-                // Find the minimum duration among all applicable conditions
+
+                if (this.levelLengthMode === 'levels') {
+                    if (this.levelBasedConditions.length === 0) {
+                        return this.setupData.levelDuration;
+                    }
+                    const currentLevelNum = this.blindLevels[this.currentLevel].level;
+                    let applicableMinutes = this.setupData.levelDuration;
+                    for (const cond of this.levelBasedConditions) {
+                        if (currentLevelNum >= cond.fromLevel) {
+                            applicableMinutes = cond.minutes;
+                        }
+                    }
+                    return applicableMinutes;
+                }
+
+                // Players mode
+                if (this.levelLengthConditions.length === 0) {
+                    return this.setupData.levelDuration;
+                }
+
                 let applicableMinutes = this.setupData.levelDuration;
-                
                 for (const cond of this.levelLengthConditions) {
                     if (this.playersRemaining <= cond.playersRemaining && cond.minutes < applicableMinutes) {
                         applicableMinutes = cond.minutes;
                     }
                 }
-                
-                // If we already have an active reduced duration, don't go back up
+
+                // Don't go back up once a shorter duration is active
                 if (this.activeLevelDuration !== null && this.activeLevelDuration < applicableMinutes) {
                     return this.activeLevelDuration;
                 }
-                
+
                 return applicableMinutes;
+            }
+
+            // ===== BREAKS =====
+
+            toggleBreaks() {
+                this.breaksEnabled = !this.breaksEnabled;
+                this.render();
+            }
+
+            adjustBreakFrequency(delta) {
+                this.breakFrequency = Math.max(1, Math.min(10, this.breakFrequency + delta));
+                this.render();
+            }
+
+            adjustBreakDuration(delta) {
+                this.breakDuration = Math.max(1, Math.min(60, this.breakDuration + delta));
+                this.render();
+            }
+
+            getBreakPoints() {
+                if (!this.breaksEnabled || this.breakFrequency < 1) return new Set();
+                const maxLevel = this.blindLevels[this.blindLevels.length - 1].level;
+                const points = new Set();
+                for (const l of this.blindLevels) {
+                    if (l.level % this.breakFrequency === 0 && l.level < maxLevel) {
+                        points.add(l.level);
+                    }
+                }
+                return points;
+            }
+
+            getBreakLevelNumbers() {
+                return [...this.getBreakPoints()].sort((a, b) => a - b);
+            }
+
+            startBreak() {
+                this.isOnBreak = true;
+                this.breakTotalTime = this.breakDuration * 60;
+                this.breakTimeLeft = this.breakTotalTime;
+                this.userIsScrolling = false;
+                this.render();
+                this.scrollToCurrentLevel();
+            }
+
+            endBreak() {
+                this.isOnBreak = false;
+                this.breakTimeLeft = 0;
+                if (this.currentLevel < this.blindLevels.length - 1) {
+                    this.currentLevel++;
+                    const effectiveDuration = this.getEffectiveLevelDuration();
+                    if (this.levelLengthMode === 'levels' && this.variableLevelLength) {
+                        this.activeLevelDuration = effectiveDuration;
+                    } else if (this.activeLevelDuration === null || effectiveDuration < this.activeLevelDuration) {
+                        this.activeLevelDuration = effectiveDuration;
+                    }
+                    this.totalTime = this.activeLevelDuration * 60;
+                    this.timeLeft = this.totalTime;
+                    this.isExtended = false;
+                }
+                this.userIsScrolling = false;
+                this.checkSurvivorBonus();
+                this.render();
+                this.scrollToCurrentLevel();
+            }
+
+            updateBreakDisplay() {
+                const timerEl = document.querySelector('.main-timer');
+                const progressEl = document.querySelector('.progress-line');
+                if (!timerEl || !progressEl) return;
+                timerEl.textContent = this.formatTime(this.breakTimeLeft);
+                timerEl.classList.toggle('dim', !this.isRunning);
+                timerEl.classList.remove('critical');
+                const pct = this.breakTotalTime > 0 ? ((this.breakTotalTime - this.breakTimeLeft) / this.breakTotalTime) * 100 : 0;
+                progressEl.style.width = pct + '%';
+                progressEl.classList.remove('critical');
+            }
+
+            // ===== SURVIVOR CHIPS =====
+
+            toggleSurvivorChips() {
+                this.survivorChipsEnabled = !this.survivorChipsEnabled;
+                this.render();
+            }
+
+            adjustSurvivorChipValue(delta) {
+                this.survivorChipValue = Math.max(1000, this.survivorChipValue + delta);
+                this.render();
+            }
+
+            checkSurvivorBonus() {
+                if (!this.survivorChipsEnabled || this.setupData.rebuyCloseLevel === 0) return;
+                if (this.survivorBonusTotal > 0) return;
+                const currentLevelNum = this.blindLevels[this.currentLevel].level;
+                if (currentLevelNum > this.setupData.rebuyCloseLevel) {
+                    const survivors = Math.max(0, this.playersRemaining - this.rebuys);
+                    this.survivorBonusTotal = survivors * this.survivorChipValue;
+                }
             }
 
             adjustStack(delta) {
@@ -2237,10 +2609,14 @@ this.blindLevels = [
 
             startTournament() {
                 this.playersRemaining = this.setupData.totalPlayers;
-                this.activeLevelDuration = this.setupData.levelDuration; // Start with base duration
-                this.totalTime = this.setupData.levelDuration * 60;
-                this.timeLeft = this.setupData.levelDuration * 60;
                 this.currentLevel = 0;
+                this.isOnBreak = false;
+                this.breakTimeLeft = 0;
+                this.breakTotalTime = 0;
+                this.survivorBonusTotal = 0;
+                this.activeLevelDuration = this.getEffectiveLevelDuration();
+                this.totalTime = this.activeLevelDuration * 60;
+                this.timeLeft = this.activeLevelDuration * 60;
                 this.rebuys = 0;
                 this.isRunning = false;
                 this.isExtended = false;
@@ -2354,15 +2730,24 @@ this.blindLevels = [
             toggleTimer() {
                 this.initAudioContext();
                 this.isRunning = !this.isRunning;
-                
+
                 // Update status badge
                 const badge = document.querySelector('.status-badge');
                 if (badge) {
-                    badge.classList.toggle('running', this.isRunning);
-                    badge.classList.toggle('paused', !this.isRunning);
-                    badge.innerHTML = `<div class="status-indicator"></div>${this.isRunning ? 'Running' : 'Paused'}`;
+                    if (this.isOnBreak) {
+                        badge.innerHTML = `<div class="status-indicator" style="background:#f59e0b;"></div>${this.isRunning ? 'Break' : 'Paused'}`;
+                    } else {
+                        badge.classList.toggle('running', this.isRunning);
+                        badge.classList.toggle('paused', !this.isRunning);
+                        badge.innerHTML = `<div class="status-indicator"></div>${this.isRunning ? 'Running' : 'Paused'}`;
+                    }
                 }
-                this.updateTimerDisplay();
+
+                if (this.isOnBreak) {
+                    this.updateBreakDisplay();
+                } else {
+                    this.updateTimerDisplay();
+                }
             }
 
             addTwoMinutes() {
@@ -2371,32 +2756,59 @@ this.blindLevels = [
             }
 
             nextLevel() {
+                if (this.isOnBreak) {
+                    this.endBreak();
+                    return;
+                }
                 if (this.currentLevel < this.blindLevels.length - 1) {
+                    const currentLevelNum = this.blindLevels[this.currentLevel].level;
+                    if (this.breaksEnabled && currentLevelNum % this.breakFrequency === 0) {
+                        this.startBreak();
+                        return;
+                    }
                     this.currentLevel++;
-                    
-                    // Apply variable level length - check for new shorter duration
+
                     const effectiveDuration = this.getEffectiveLevelDuration();
-                    if (this.activeLevelDuration === null || effectiveDuration < this.activeLevelDuration) {
+                    if (this.levelLengthMode === 'levels' && this.variableLevelLength) {
+                        this.activeLevelDuration = effectiveDuration;
+                    } else if (this.activeLevelDuration === null || effectiveDuration < this.activeLevelDuration) {
                         this.activeLevelDuration = effectiveDuration;
                     }
                     this.totalTime = this.activeLevelDuration * 60;
                     this.timeLeft = this.totalTime;
-                    
+
                     this.isExtended = false;
-                    this.userIsScrolling = false; // Allow auto-scroll on explicit level change
+                    this.userIsScrolling = false;
+                    this.checkSurvivorBonus();
                     this.render();
                     this.scrollToCurrentLevel();
                 }
             }
 
             prevLevel() {
+                if (this.isOnBreak) {
+                    // Cancel the break, return to the level that just ended
+                    this.isOnBreak = false;
+                    this.breakTimeLeft = 0;
+                    const effectiveDuration = this.getEffectiveLevelDuration();
+                    this.activeLevelDuration = effectiveDuration;
+                    this.totalTime = this.activeLevelDuration * 60;
+                    this.timeLeft = this.totalTime;
+                    this.isExtended = false;
+                    this.userIsScrolling = false;
+                    this.render();
+                    this.scrollToCurrentLevel();
+                    return;
+                }
                 if (this.currentLevel > 0) {
                     this.currentLevel--;
-                    // Keep using current active duration (don't increase it back)
+                    if (this.levelLengthMode === 'levels' && this.variableLevelLength) {
+                        this.activeLevelDuration = this.getEffectiveLevelDuration();
+                    }
                     this.totalTime = (this.activeLevelDuration || this.setupData.levelDuration) * 60;
                     this.timeLeft = this.totalTime;
                     this.isExtended = false;
-                    this.userIsScrolling = false; // Allow auto-scroll on explicit level change
+                    this.userIsScrolling = false;
                     this.render();
                     this.scrollToCurrentLevel();
                 }
