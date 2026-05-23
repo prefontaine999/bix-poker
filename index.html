@@ -909,6 +909,7 @@ this.blindLevels = [
                 this.tableCount = 1;
                 this.tableAssignments = null;
                 this.redrawSelections = [];
+                this.redrawTableCount = 1;
                 this.redrawResult = null;
                 this.isShuffling = false;
                 this.shuffleNames = [];
@@ -1152,7 +1153,7 @@ this.blindLevels = [
                 // Update ticker bar
                 const ticker = document.querySelector('.ticker-bar');
                 if (ticker) {
-                    ticker.textContent = `PRIZE POOL: ${this.formatNumberCompact(pool)} THB • ${this.getPayoutTickerContent()}`;
+                    ticker.textContent = `PRIZE POOL: ฿${this.formatNumberCompact(pool)} • ${this.getPayoutTickerContent()}`;
                 }
             }
 
@@ -1254,7 +1255,7 @@ this.blindLevels = [
                 const currentPayouts = this.getCurrentPayouts();
                 return currentPayouts.slice(0, this.placesPaid).map((amount, index) => {
                     const medal = index < 3 ? medals[index] + ' ' : '';
-                    return `${medal}${this.getOrdinal(index + 1)}: ${this.formatNumberCompact(amount)} THB`;
+                    return `${medal}${this.getOrdinal(index + 1)}: ฿${this.formatNumberCompact(amount)}`;
                 }).join(' • ');
             }
 
@@ -1696,6 +1697,7 @@ this.blindLevels = [
                                         <select onchange="app.updateTableCount(this.value)" class="setup-select">
                                             <option value="1" ${this.tableCount === 1 ? 'selected' : ''}>1 Table</option>
                                             <option value="2" ${this.tableCount === 2 ? 'selected' : ''}>2 Tables</option>
+                                            <option value="3" ${this.tableCount === 3 ? 'selected' : ''}>3 Tables</option>
                                         </select>
                                     </div>
                                 </div>
@@ -1730,19 +1732,24 @@ this.blindLevels = [
             }
 
             renderSeatingResult() {
-                const tables = this.tableCount === 1 
+                const tables = this.tableCount === 1
                     ? [{ key: 'pokerTable', name: 'Poker Table' }]
-                    : [{ key: 'pokerTable', name: 'Poker Table' }, { key: 'kitchenTable', name: 'Kitchen Table' }];
+                    : this.tableCount === 2
+                        ? [{ key: 'pokerTable', name: 'Poker Table' }, { key: 'kitchenTable', name: 'Kitchen Table' }]
+                        : [{ key: 'pokerTable', name: 'Poker Table' }, { key: 'kitchenTable', name: 'Kitchen Table' }, { key: 'poolTable', name: 'Pool Table' }];
+
+                const gridCols = this.tableCount === 1 ? '1fr' : this.tableCount === 2 ? '1fr 1fr' : '1fr 1fr 1fr';
+                const maxW     = this.tableCount === 3 ? '1200px' : '900px';
 
                 return `
                     <div class="modal-wrapper">
-                        <div class="setup-content" style="max-width: 900px;">
+                        <div class="setup-content" style="max-width: ${maxW};">
                             <div class="setup-header">
                                 <h1 class="setup-title">TABLE ASSIGNMENTS</h1>
                                 <p class="setup-subtitle">Players have been randomly assigned to seats</p>
                             </div>
 
-                            <div style="display: grid; grid-template-columns: ${this.tableCount === 1 ? '1fr' : '1fr 1fr'}; gap: 2rem;">
+                            <div style="display: grid; grid-template-columns: ${gridCols}; gap: 2rem;">
                                 ${tables.map(table => `
                                     <div class="setup-card">
                                         <h2 style="text-align: center; font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem;">
@@ -1876,7 +1883,7 @@ this.blindLevels = [
                             </div>
                             
                             <div class="ticker-bar">
-                                PRIZE POOL: ${this.formatNumberCompact(pool)} THB • ${this.getPayoutTickerContent()}
+                                PRIZE POOL: ฿${this.formatNumberCompact(pool)} • ${this.getPayoutTickerContent()}
                             </div>
 
                             <div class="top-right-controls">
@@ -2032,11 +2039,29 @@ this.blindLevels = [
                     <div class="modal-wrapper">
                         <div class="setup-content">
                             <div class="setup-header">
-                                <h1 class="setup-title">FINAL TABLE DRAW</h1>
+                                <h1 class="setup-title">${this.redrawTableCount === 1 ? 'FINAL TABLE DRAW' : 'TABLE REDRAW'}</h1>
                                 <p class="setup-subtitle">Select players still in the tournament</p>
                             </div>
 
                             <div class="setup-card">
+                                <div class="setup-group">
+                                    <label class="setup-label">Redraw to</label>
+                                    <div style="display: flex; gap: 0.25rem; background: rgba(0,0,0,0.4); border-radius: 0.375rem; padding: 0.25rem; max-width: 200px; margin: 0 auto;">
+                                        <button onclick="app.setRedrawTableCount(1)"
+                                            style="flex:1;padding:0.4rem 0;border-radius:0.25rem;border:none;cursor:pointer;font-size:0.8rem;font-family:var(--font-ui);
+                                                   background:${this.redrawTableCount===1?'var(--accent-color)':'transparent'};
+                                                   color:${this.redrawTableCount===1?'#fff':'var(--text-dim)'};">
+                                            1 Table
+                                        </button>
+                                        <button onclick="app.setRedrawTableCount(2)"
+                                            style="flex:1;padding:0.4rem 0;border-radius:0.25rem;border:none;cursor:pointer;font-size:0.8rem;font-family:var(--font-ui);
+                                                   background:${this.redrawTableCount===2?'var(--accent-color)':'transparent'};
+                                                   color:${this.redrawTableCount===2?'#fff':'var(--text-dim)'};">
+                                            2 Tables
+                                        </button>
+                                    </div>
+                                </div>
+
                                 <div class="setup-group">
                                     <label class="setup-label">
                                         Players (${selectedCount} selected, ${this.playersRemaining} remaining)
@@ -2058,8 +2083,10 @@ this.blindLevels = [
                                     </div>
                                 </div>
 
+                                </div>
+
                                 <button onclick="app.performRedraw()" class="btn btn-primary" style="width: 100%; padding: 1rem;" ${!canRedraw ? 'disabled' : ''}>
-                                    ${icons.Shuffle} Draw Final Table
+                                    ${icons.Shuffle} ${this.redrawTableCount === 1 ? 'Draw Final Table' : 'Redraw Tables'}
                                 </button>
                                 ${!canRedraw && selectedCount > 0 ? `
                                     <div style="text-align: center; color: var(--danger-color); font-size: 0.75rem; margin-top: 0.75rem;">
@@ -2077,39 +2104,47 @@ this.blindLevels = [
             }
 
             renderRedrawResult() {
+                const tableCount = this.redrawResult.length;
+                const gridCols   = tableCount === 1 ? '1fr' : '1fr 1fr';
+                const maxW       = tableCount === 1 ? '600px' : '900px';
+                const title      = tableCount === 1 ? 'FINAL TABLE ASSIGNMENT' : 'TABLE REDRAW';
+
                 return `
                     <div class="modal-wrapper">
-                        <div class="setup-content">
+                        <div class="setup-content" style="max-width:${maxW};">
                             <div class="setup-header">
-                                <h1 class="setup-title">FINAL TABLE ASSIGNMENT</h1>
+                                <h1 class="setup-title">${title}</h1>
                                 <p class="setup-subtitle">Players have been randomly assigned to seats</p>
                             </div>
 
-                            <div class="setup-card">
-                                <h2 style="text-align: center; font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem;">
-                                    Poker Table
-                                </h2>
-                                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-                                    ${this.redrawResult.map((player, index) => {
-                                        const position = this.getPositionLabel(index);
-                                        return `
-                                            <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255, 255, 255, 0.03); border-radius: 0.375rem; padding: 0.75rem 1rem; border: 1px solid #333;">
-                                                <div style="display: flex; align-items: center; gap: 0.75rem;">
-                                                    <span class="mono dim" style="font-size: 0.75rem; width: 32px;">#${index + 1}</span>
-                                                    <span style="font-size: 1rem; font-weight: 500;">${player}</span>
-                                                </div>
-                                                ${position ? `
-                                                    <span style="background: rgba(255, 255, 255, 0.1); padding: 0.25rem 0.75rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600; color: var(--text-dim);">
-                                                        ${position}
-                                                    </span>
-                                                ` : ''}
-                                            </div>
-                                        `;
-                                    }).join('')}
-                                </div>
+                            <div style="display:grid;grid-template-columns:${gridCols};gap:2rem;">
+                                ${this.redrawResult.map(table => `
+                                    <div class="setup-card">
+                                        <h2 style="text-align:center;font-size:1.5rem;font-weight:600;margin-bottom:1.5rem;">
+                                            ${table.name}
+                                        </h2>
+                                        <div style="display:flex;flex-direction:column;gap:0.75rem;">
+                                            ${table.players.map((player, index) => {
+                                                const position = this.getPositionLabel(index);
+                                                return `
+                                                    <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.03);border-radius:0.375rem;padding:0.75rem 1rem;border:1px solid #333;">
+                                                        <div style="display:flex;align-items:center;gap:0.75rem;">
+                                                            <span class="mono dim" style="font-size:0.75rem;width:32px;">#${index + 1}</span>
+                                                            <span style="font-size:1rem;font-weight:500;">${player}</span>
+                                                        </div>
+                                                        ${position ? `
+                                                            <span style="background:rgba(255,255,255,0.1);padding:0.25rem 0.75rem;border-radius:0.25rem;font-size:0.75rem;font-weight:600;color:var(--text-dim);">
+                                                                ${position}
+                                                            </span>
+                                                        ` : ''}
+                                                    </div>`;
+                                            }).join('')}
+                                        </div>
+                                    </div>
+                                `).join('')}
                             </div>
 
-                            <button onclick="app.closeRedrawResult()" class="btn btn-primary" style="width: 100%; padding: 1rem; margin-top: 2rem;">
+                            <button onclick="app.closeRedrawResult()" class="btn btn-primary" style="width:100%;padding:1rem;margin-top:2rem;">
                                 Done
                             </button>
                         </div>
@@ -2514,7 +2549,7 @@ this.blindLevels = [
                 this.showPayouts = false;
                 this.showSeating = true;
                 this.playerNames = new Array(this.setupData.totalPlayers).fill('');
-                this.tableCount = this.setupData.totalPlayers > 10 ? 2 : 1;
+                this.tableCount = this.setupData.totalPlayers > 13 ? 3 : this.setupData.totalPlayers > 7 ? 2 : 1;
                 this.tableAssignments = null;
                 this.render();
             }
@@ -2559,11 +2594,23 @@ this.blindLevels = [
                         this.tableAssignments = {
                             pokerTable: shuffled
                         };
-                    } else {
+                    } else if (this.tableCount === 2) {
                         const pokerTableCount = Math.ceil(this.setupData.totalPlayers / 2);
                         this.tableAssignments = {
                             pokerTable: shuffled.slice(0, pokerTableCount),
                             kitchenTable: shuffled.slice(pokerTableCount)
+                        };
+                    } else {
+                        // 3 tables: pool table gets the fewest (floor), extras go to poker then kitchen
+                        const n = this.setupData.totalPlayers;
+                        const base = Math.floor(n / 3);
+                        const extra = n % 3;
+                        const pokerCount   = base + (extra >= 1 ? 1 : 0);
+                        const kitchenCount = base + (extra >= 2 ? 1 : 0);
+                        this.tableAssignments = {
+                            pokerTable:   shuffled.slice(0, pokerCount),
+                            kitchenTable: shuffled.slice(pokerCount, pokerCount + kitchenCount),
+                            poolTable:    shuffled.slice(pokerCount + kitchenCount)
                         };
                     }
                     this.render();
@@ -2627,11 +2674,10 @@ this.blindLevels = [
                 this.redrawResult = null;
                 
                 if (this.tableAssignments) {
-                    if (this.tableAssignments.kitchenTable) {
-                        this.originalPlayerNames = [...this.tableAssignments.pokerTable, ...this.tableAssignments.kitchenTable];
-                    } else {
-                        this.originalPlayerNames = [...this.tableAssignments.pokerTable];
-                    }
+                    let all = [...this.tableAssignments.pokerTable];
+                    if (this.tableAssignments.kitchenTable) all = all.concat(this.tableAssignments.kitchenTable);
+                    if (this.tableAssignments.poolTable)    all = all.concat(this.tableAssignments.poolTable);
+                    this.originalPlayerNames = all;
                 }
                 this.userIsScrolling = false; // Allow auto-scroll when tournament starts
                 this.render();
@@ -2645,7 +2691,13 @@ this.blindLevels = [
                 }
                 this.showRedraw = true;
                 this.redrawResult = null;
+                this.redrawTableCount = 1;
                 this.redrawSelections = this.originalPlayerNames.map(() => false);
+                this.render();
+            }
+
+            setRedrawTableCount(count) {
+                this.redrawTableCount = count;
                 this.render();
             }
 
@@ -2656,16 +2708,24 @@ this.blindLevels = [
 
             performRedraw() {
                 const selectedPlayers = this.originalPlayerNames.filter((_, index) => this.redrawSelections[index]);
-                
+
                 if (selectedPlayers.length < 2) {
                     alert('Please select at least 2 players for redraw.');
                     return;
                 }
-                
+
                 this.shuffleNames = selectedPlayers;
                 this.startShuffleAnimation(() => {
                     const shuffled = this.shuffleArray(selectedPlayers);
-                    this.redrawResult = shuffled;
+                    if (this.redrawTableCount === 1) {
+                        this.redrawResult = [{ name: 'Poker Table', players: shuffled }];
+                    } else {
+                        const count1 = Math.ceil(shuffled.length / 2);
+                        this.redrawResult = [
+                            { name: 'Poker Table',   players: shuffled.slice(0, count1) },
+                            { name: 'Kitchen Table', players: shuffled.slice(count1) }
+                        ];
+                    }
                     this.render();
                 });
             }
