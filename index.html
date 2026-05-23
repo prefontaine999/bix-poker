@@ -889,7 +889,12 @@ this.blindLevels = [
                 this.survivorChipsEnabled = false;
                 this.survivorChipValue = 10000;
                 this.survivorBonusTotal = 0;
-                
+                this.lateRegCount = 0;
+                this.showLateReg = false;
+                this.lateRegDraw = null;
+                this.lateRegStep = 'setup';
+                this.lateRegTableCounts = {};
+
                 // Breaks feature
                 this.breaksEnabled = false;
                 this.breakFrequency = 5;
@@ -1241,12 +1246,15 @@ this.blindLevels = [
 
             getCurrentPayouts() {
                 const currentPayouts = [...this.payouts];
-                
-                for (let i = 0; i < this.rebuys; i++) {
+
+                // Rebuys and late regs both add a buy-in to the pool;
+                // distribute them sequentially across places (1st, 2nd, 3rd, 1st, …)
+                const totalAdditions = this.rebuys + this.lateRegCount;
+                for (let i = 0; i < totalAdditions; i++) {
                     const positionIndex = i % this.placesPaid;
                     currentPayouts[positionIndex] += this.setupData.buyIn;
                 }
-                
+
                 return currentPayouts;
             }
 
@@ -1323,6 +1331,8 @@ this.blindLevels = [
                     content = this.renderRedrawSeating();
                 } else if (this.showWarning) {
                     content = this.renderGame() + this.renderWarning();
+                } else if (this.showLateReg) {
+                    content = this.renderGame() + this.renderLateRegModal();
                 } else {
                     content = this.renderGame();
                 }
@@ -1975,13 +1985,18 @@ this.blindLevels = [
                         <div class="control-panel-section">
                             <div class="control-panel-title">Player Controls</div>
                             <div class="control-panel-buttons">
-                                <button onclick="app.eliminatePlayer()" ${this.playersRemaining <= 1 ? 'disabled' : ''} 
+                                <button onclick="app.eliminatePlayer()" ${this.playersRemaining <= 1 ? 'disabled' : ''}
                                     class="btn btn-secondary" title="Eliminate Player (BACKSPACE)">
                                     ${icons.Minus} OUT
                                 </button>
-                                <button onclick="app.addPlayer()" ${this.playersRemaining >= this.setupData.totalPlayers ? 'disabled' : ''} 
+                                <button onclick="app.addPlayer()" ${this.playersRemaining >= this.setupData.totalPlayers ? 'disabled' : ''}
                                     class="btn btn-icon" title="Undo elimination">
                                     ${icons.RotateCcw}
+                                </button>
+                                <div class="control-panel-divider"></div>
+                                <button onclick="app.lateRegPlayer()"
+                                    class="btn btn-secondary" title="Late Registration">
+                                    ${icons.Plus} Late Reg
                                 </button>
                                 
                                 ${this.setupData.rebuyCloseLevel > 0 ? `
@@ -2194,6 +2209,125 @@ this.blindLevels = [
                         </div>
                     </div>
                 `;
+            }
+
+            // ===== LATE REGISTRATION =====
+
+            lateRegPlayer() {
+                // Open the modal in setup step — seed counts from last known state or even split
+                if (Object.keys(this.lateRegTableCounts).length === 0) {
+                    const base = Math.floor(this.playersRemaining / this.tableCount);
+                    const extra = this.playersRemaining % this.tableCount;
+                    if (this.tableCount >= 1) this.lateRegTableCounts.pokerTable   = base + (extra >= 1 ? 1 : 0);
+                    if (this.tableCount >= 2) this.lateRegTableCounts.kitchenTable = base + (extra >= 2 ? 1 : 0);
+                    if (this.tableCount >= 3) this.lateRegTableCounts.poolTable    = base;
+                }
+                this.lateRegStep = 'setup';
+                this.lateRegDraw = null;
+                this.showLateReg = true;
+                this.controlPanelOpen = false;
+                this.render();
+            }
+
+            adjustLateRegCount(key, delta) {
+                this.lateRegTableCounts[key] = Math.max(0, (this.lateRegTableCounts[key] || 0) + delta);
+                this.render();
+            }
+
+            confirmLateRegDraw() {
+                // Find the table(s) with the fewest players — assign to one of them randomly
+                const tableKeys = this.tableCount === 1
+                    ? ['pokerTable']
+                    : this.tableCount === 2
+                        ? ['pokerTable', 'kitchenTable']
+                        : ['pokerTable', 'kitchenTable', 'poolTable'];
+                const tableNames = { pokerTable: 'Poker Table', kitchenTable: 'Kitchen Table', poolTable: 'Pool Table' };
+
+                const minCount = Math.min(...tableKeys.map(k => this.lateRegTableCounts[k] || 0));
+                const candidates = tableKeys.filter(k => (this.lateRegTableCounts[k] || 0) === minCount);
+                const chosenKey = candidates[Math.floor(Math.random() * candidates.length)];
+                const tableSize = this.lateRegTableCounts[chosenKey] || 0;
+                // Update counts and player totals
+                this.lateRegTableCounts[chosenKey] = tableSize + 1;
+                this.setupData.totalPlayers++;
+                this.playersRemaining++;
+                this.lateRegCount++;
+
+                this.lateRegDraw = { table: tableNames[chosenKey] };
+                this.lateRegStep = 'result';
+                this.render();
+            }
+
+            closeLateReg() {
+                this.showLateReg = false;
+                this.lateRegDraw = null;
+                this.render();
+            }
+
+            renderLateRegModal() {
+                const tableKeys = this.tableCount === 1
+                    ? ['pokerTable']
+                    : this.tableCount === 2
+                        ? ['pokerTable', 'kitchenTable']
+                        : ['pokerTable', 'kitchenTable', 'poolTable'];
+                const tableNames = { pokerTable: 'Poker Table', kitchenTable: 'Kitchen Table', poolTable: 'Pool Table' };
+
+                if (this.lateRegStep === 'result') {
+                    const { table } = this.lateRegDraw;
+                    return `
+                        <div class="modal-overlay">
+                            <div class="modal-content" style="text-align:center;min-width:260px;">
+                                <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.15em;color:var(--text-dim);margin-bottom:1.5rem;">Late Registration</div>
+                                <div style="font-size:2rem;font-family:var(--font-mono);font-weight:800;line-height:1.2;margin-bottom:0.5rem;">
+                                    ${table}
+                                </div>
+                                <div style="font-size:0.85rem;color:var(--accent);font-weight:600;margin-bottom:1.5rem;">
+                                    Enter as Big Blind on the next hand
+                                </div>
+                                <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:1.5rem;">
+                                    ${this.playersRemaining} players &nbsp;·&nbsp; ${this.lateRegCount} late reg${this.lateRegCount > 1 ? 's' : ''}
+                                </div>
+                                <button onclick="app.closeLateReg()" class="btn btn-primary" style="width:100%;padding:0.75rem;">Done</button>
+                            </div>
+                        </div>`;
+                }
+
+                // Setup step — adjust table counts
+                const total = tableKeys.reduce((s, k) => s + (this.lateRegTableCounts[k] || 0), 0);
+                const expected = this.playersRemaining;
+                const totalOk = total === expected;
+                return `
+                    <div class="modal-overlay">
+                        <div class="modal-content" style="min-width:280px;">
+                            <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.15em;color:var(--text-dim);text-align:center;margin-bottom:1.25rem;">
+                                Late Registration
+                            </div>
+                            <div style="font-size:0.8rem;color:var(--text-dim);text-align:center;margin-bottom:1rem;">
+                                Set current player count per table
+                            </div>
+                            <div style="display:flex;flex-direction:column;gap:0.75rem;margin-bottom:1rem;">
+                                ${tableKeys.map(key => `
+                                    <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
+                                        <span style="font-size:0.85rem;flex:1;">${tableNames[key]}</span>
+                                        <div style="display:flex;align-items:center;gap:0.5rem;">
+                                            <button class="btn btn-icon" style="width:1.75rem;height:1.75rem;" onclick="app.adjustLateRegCount('${key}', -1)">−</button>
+                                            <span class="mono" style="font-size:1rem;min-width:1.5rem;text-align:center;">${this.lateRegTableCounts[key] || 0}</span>
+                                            <button class="btn btn-icon" style="width:1.75rem;height:1.75rem;" onclick="app.adjustLateRegCount('${key}', 1)">+</button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <div style="text-align:center;font-size:0.8rem;margin-bottom:1rem;${totalOk ? 'color:var(--text-dim);' : 'color:#ef4444;font-weight:600;'}">
+                                Total: ${total} / ${expected} players${totalOk ? '' : ' — adjust counts to match'}
+                            </div>
+                            <button onclick="app.confirmLateRegDraw()" class="btn btn-primary" style="width:100%;padding:0.75rem;" ${totalOk ? '' : 'disabled'}>
+                                Assign Table
+                            </button>
+                            <button onclick="app.closeLateReg()" class="btn btn-secondary" style="width:100%;padding:0.6rem;margin-top:0.5rem;">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>`;
             }
 
             // Control Methods
@@ -2661,6 +2795,17 @@ this.blindLevels = [
                 this.breakTimeLeft = 0;
                 this.breakTotalTime = 0;
                 this.survivorBonusTotal = 0;
+                this.lateRegCount = 0;
+                this.showLateReg = false;
+                this.lateRegDraw = null;
+                this.lateRegStep = 'setup';
+                // Seed table counts from actual assignment
+                this.lateRegTableCounts = {};
+                if (this.tableAssignments) {
+                    if (this.tableAssignments.pokerTable)   this.lateRegTableCounts.pokerTable   = this.tableAssignments.pokerTable.length;
+                    if (this.tableAssignments.kitchenTable) this.lateRegTableCounts.kitchenTable = this.tableAssignments.kitchenTable.length;
+                    if (this.tableAssignments.poolTable)    this.lateRegTableCounts.poolTable    = this.tableAssignments.poolTable.length;
+                }
                 this.activeLevelDuration = this.getEffectiveLevelDuration();
                 this.totalTime = this.activeLevelDuration * 60;
                 this.timeLeft = this.activeLevelDuration * 60;
