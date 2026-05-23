@@ -1160,6 +1160,19 @@ this.blindLevels = [
                 if (ticker) {
                     ticker.textContent = `PRIZE POOL: ฿${this.formatNumberCompact(pool)} • ${this.getPayoutTickerContent()}`;
                 }
+
+                // Sync control-panel button disabled states (they aren't re-rendered by updateStats)
+                const btnEliminate = document.querySelector('[onclick="app.eliminatePlayer()"]');
+                if (btnEliminate) btnEliminate.disabled = this.playersRemaining <= 1;
+
+                const btnAddPlayer = document.querySelector('[onclick="app.addPlayer()"]');
+                if (btnAddPlayer) btnAddPlayer.disabled = this.playersRemaining >= this.setupData.totalPlayers;
+
+                const btnAddRebuy = document.querySelector('[onclick="app.addRebuy()"]');
+                if (btnAddRebuy) btnAddRebuy.disabled = !this.areRebuysOpen();
+
+                const btnUndoRebuy = document.querySelector('[onclick="app.undoRebuy()"]');
+                if (btnUndoRebuy) btnUndoRebuy.disabled = !this.areRebuysOpen() || this.rebuys === 0;
             }
 
             initAudioContext() {
