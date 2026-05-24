@@ -857,21 +857,24 @@ this.blindLevels = [
     { level: 3, small: 600, big: 1200 },
     { level: 4, small: 800, big: 1600 },
     { level: 5, small: 1000, big: 2000 },
-    { level: 6, small: 1500, big: 3000 },
-    { level: 7, small: 2000, big: 4000 },
-    { level: 8, small: 2500, big: 5000 },
-    { level: 9, small: 3000, big: 6000 },
-    { level: 10, small: 4000, big: 8000 },
-    { level: 11, small: 5000, big: 10000 },
-    { level: 12, small: 6000, big: 12000 },
-    { level: 13, small: 8000, big: 16000 },
-    { level: 14, small: 10000, big: 20000 },
-    { level: 15, small: 15000, big: 30000 },
-    { level: 16, small: 20000, big: 40000 },
-    { level: 17, small: 25000, big: 50000 },
-    { level: 18, small: 30000, big: 60000 },
-    { level: 19, small: 40000, big: 80000 },
-    { level: 20, small: 50000, big: 100000 },
+    { level: 6, small: 1200, big: 2400 },
+    { level: 7, small: 1500, big: 3000 },
+    { level: 8, small: 2000, big: 4000 },
+    { level: 9, small: 2500, big: 5000 },
+    { level: 10, small: 3000, big: 6000 },
+    { level: 11, small: 4000, big: 8000 },
+    { level: 12, small: 5000, big: 10000 },
+    { level: 13, small: 6000, big: 12000 },
+    { level: 14, small: 8000, big: 16000 },
+    { level: 15, small: 10000, big: 20000 },
+    { level: 16, small: 15000, big: 30000 },
+    { level: 17, small: 20000, big: 40000 },
+    { level: 18, small: 25000, big: 50000 },
+    { level: 19, small: 30000, big: 60000 },
+    { level: 20, small: 40000, big: 80000 },
+    { level: 21, small: 50000, big: 100000 },
+    { level: 22, small: 60000, big: 120000 },
+    { level: 23, small: 75000, big: 150000 },    
 ];
 
                 this.showSetup = true;
@@ -921,6 +924,7 @@ this.blindLevels = [
                 this.shuffleInterval = null;
                 this.payouts = [];
                 this.placesPaid = 3;
+                this.tournamentFee = 0;
                 this.currentLevel = 0;
                 this.playersRemaining = 7;
                 this.rebuys = 0;
@@ -1132,18 +1136,19 @@ this.blindLevels = [
             // Update just the stats section in the rail (players, rebuys, avg chips, avg BB)
             updateStats() {
                 const cur = this.blindLevels[this.currentLevel];
-                const pool = (this.setupData.totalPlayers * this.setupData.buyIn) + (this.rebuys * this.setupData.buyIn);
+                const grossPool = (this.setupData.totalPlayers * this.setupData.buyIn) + (this.rebuys * this.setupData.buyIn);
+                const pool = grossPool - this.tournamentFee;
                 const totalChipsInPlay = (this.setupData.totalPlayers * this.setupData.startingStack) + (this.rebuys * this.setupData.startingStack) + this.survivorBonusTotal;
                 const avgChips = Math.round(totalChipsInPlay / this.playersRemaining);
                 const rawBB = avgChips / cur.big;
                 const avgBB = rawBB.toFixed(rawBB >= 10 ? 0 : 1);
-                
+
                 const statsEl = document.querySelector('.rail-stats');
                 if (!statsEl) return;
-                
+
                 const values = statsEl.querySelectorAll('.stat-block .value');
                 if (values[0]) values[0].textContent = `${this.playersRemaining}/${this.setupData.totalPlayers}`;
-                
+
                 // Second stat block depends on whether rebuys are enabled
                 if (this.setupData.rebuyCloseLevel > 0) {
                     const rebuyVal = statsEl.querySelector('.stat-block:nth-child(2) .value.mono');
@@ -1151,10 +1156,10 @@ this.blindLevels = [
                 } else {
                     if (values[1]) values[1].textContent = this.formatNumberCompact(pool);
                 }
-                
+
                 if (values[2]) values[2].textContent = this.formatNumberCompact(avgChips);
                 if (values[3]) values[3].textContent = avgBB;
-                
+
                 // Update ticker bar
                 const ticker = document.querySelector('.ticker-bar');
                 if (ticker) {
@@ -1633,29 +1638,46 @@ this.blindLevels = [
             }
 
             renderPayouts() {
-                const totalPool = this.setupData.totalPlayers * this.setupData.buyIn;
+                const grossPool = this.setupData.totalPlayers * this.setupData.buyIn;
+                const netPool = grossPool - this.tournamentFee;
                 const allocated = this.payouts.reduce((a, b) => a + b, 0);
-                const remaining = totalPool - allocated;
-                const isValid = remaining === 0;
+                const remaining = netPool - allocated;
+                const isValid = remaining === 0 && netPool >= 0;
 
                 return `
                     <div class="modal-wrapper">
                         <div class="setup-content">
                             <div class="setup-header">
                                 <h1 class="setup-title">PRIZE PAYOUTS</h1>
-                                <p class="setup-subtitle">Distribute ${this.formatNumber(totalPool)} THB prize pool</p>
+                                <p class="setup-subtitle">Distribute ${this.formatNumber(netPool)} THB to players</p>
                             </div>
 
                             <div class="setup-card">
-                                <div class="setup-info" style="margin-top: 0; margin-bottom: 2rem; color: ${isValid ? 'var(--success-color)' : 'var(--danger-color)'}; font-size: 1rem;">
+                                <div class="setup-info" style="margin-top:0;margin-bottom:2rem;color:${isValid ? 'var(--success-color)' : 'var(--danger-color)'};font-size:1rem;">
                                     <div class="mono">REMAINING: ${this.formatNumber(remaining)} THB</div>
+                                </div>
+
+                                <div class="setup-group">
+                                    <label class="setup-label">Tournament Fees</label>
+                                    <div class="setup-control">
+                                        <button class="btn btn-icon" onclick="app.adjustTournamentFee(-1000)">
+                                            ${icons.Minus}
+                                        </button>
+                                        <div style="text-align:center;min-width:120px;">
+                                            <div class="setup-value mono">${this.formatNumber(this.tournamentFee)}</div>
+                                            ${this.tournamentFee > 0 ? `<div style="font-size:0.7rem;color:var(--text-dim);margin-top:0.25rem;">${this.formatNumber(grossPool)} − ${this.formatNumber(this.tournamentFee)} = ${this.formatNumber(netPool)}</div>` : ''}
+                                        </div>
+                                        <button class="btn btn-icon" onclick="app.adjustTournamentFee(1000)">
+                                            ${icons.Plus}
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div class="setup-group">
                                     <label class="setup-label">Places Paid</label>
                                     <div style="display: flex; justify-content: center;">
                                         <select onchange="app.updatePlacesPaid(this.value)" class="setup-select">
-                                            ${Array.from({length: Math.floor(this.setupData.totalPlayers / 2)}, (_, i) => i + 1).map(n => 
+                                            ${Array.from({length: Math.floor(this.setupData.totalPlayers / 2)}, (_, i) => i + 1).map(n =>
                                                 `<option value="${n}" ${this.placesPaid === n ? 'selected' : ''}>${n} ${n === 1 ? 'Place' : 'Places'}</option>`
                                             ).join('')}
                                         </select>
@@ -1669,9 +1691,9 @@ this.blindLevels = [
                                             <button class="btn btn-icon" onclick="app.adjustPayout(${index}, -1000)">
                                                 ${icons.Minus}
                                             </button>
-                                            <input 
-                                                type="number" 
-                                                value="${amount}" 
+                                            <input
+                                                type="number"
+                                                value="${amount}"
                                                 onchange="app.updatePayout(${index}, this.value)"
                                                 class="setup-input"
                                                 style="max-width: 150px;"
@@ -1810,7 +1832,7 @@ this.blindLevels = [
 
             renderGame() {
                 const cur = this.blindLevels[this.currentLevel];
-                const pool = (this.setupData.totalPlayers * this.setupData.buyIn) + (this.rebuys * this.setupData.buyIn);
+                const pool = (this.setupData.totalPlayers * this.setupData.buyIn) + (this.rebuys * this.setupData.buyIn) - this.tournamentFee;
                 const totalChipsInPlay = (this.setupData.totalPlayers * this.setupData.startingStack) + (this.rebuys * this.setupData.startingStack) + this.survivorBonusTotal;
                 const avgChips = Math.round(totalChipsInPlay / this.playersRemaining);
                 
@@ -2672,6 +2694,11 @@ this.blindLevels = [
             backToSetup() {
                 this.showSetup = true;
                 this.showPayouts = false;
+                this.render();
+            }
+
+            adjustTournamentFee(delta) {
+                this.tournamentFee = Math.max(0, this.tournamentFee + delta);
                 this.render();
             }
 
