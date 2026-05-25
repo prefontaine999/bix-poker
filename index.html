@@ -10,6 +10,7 @@
     <meta name="theme-color" content="#000000">
     <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22Risithai%20Poker%20Tour%22%2C%22short_name%22%3A%22Risithai%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23000000%22%2C%22theme_color%22%3A%22%23000000%22%7D">
     <title>Risithai Tournament Timer</title>
+    <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;800&display=swap" rel="stylesheet">
@@ -823,12 +824,190 @@
             .main-timer { font-size: 25vw; }
             .rail-stats { display: none; }
         }
+
+        /* ===== REMOTE CONTROL ===== */
+        .remote-layout {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background: #000;
+            color: #fff;
+            font-family: var(--font-ui);
+            overflow: hidden;
+        }
+        .remote-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #1a1a1a;
+            flex-shrink: 0;
+        }
+        .remote-title {
+            font-size: 0.65rem;
+            font-weight: 800;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+        .remote-conn {
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .remote-conn-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: #444;
+        }
+        .remote-conn-dot.live { background: #10b981; animation: pulse 2s ease-in-out infinite; }
+        .remote-conn-dot.waiting { background: #f59e0b; }
+        .remote-state-bar {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #1a1a1a;
+            background: #080808;
+            flex-shrink: 0;
+        }
+        .remote-state-row {
+            display: flex;
+            align-items: baseline;
+            gap: 1.25rem;
+        }
+        .remote-time-display {
+            font-family: var(--font-mono);
+            font-size: 2.5rem;
+            font-weight: 800;
+            letter-spacing: -0.04em;
+            line-height: 1;
+        }
+        .remote-time-display.break-color { color: #f59e0b; }
+        .remote-level-display {
+            font-size: 0.8rem;
+            color: #666;
+        }
+        .remote-level-display strong { color: #fff; }
+        .remote-players-display {
+            font-size: 0.8rem;
+            color: #666;
+            margin-left: auto;
+        }
+        .remote-waiting {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: #444;
+            font-size: 0.9rem;
+            flex: 1;
+        }
+        .remote-waiting .code {
+            font-family: var(--font-mono);
+            font-size: 2rem;
+            font-weight: 800;
+            color: #fff;
+            letter-spacing: 0.15em;
+            margin-top: 1rem;
+        }
+        .remote-controls {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        .remote-row {
+            display: flex;
+            border-bottom: 1px solid #111;
+            flex-shrink: 0;
+        }
+        .remote-btn {
+            flex: 1;
+            background: #000;
+            color: #fff;
+            border: none;
+            border-right: 1px solid #111;
+            padding: 0;
+            min-height: 68px;
+            font-family: var(--font-ui);
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.3rem;
+            transition: background 0.08s;
+            -webkit-user-select: none;
+        }
+        .remote-btn:last-child { border-right: none; }
+        .remote-btn:active { background: #1c1c1c; }
+        .remote-btn:disabled { opacity: 0.2; pointer-events: none; }
+        .remote-btn.primary { background: #fff; color: #000; }
+        .remote-btn.primary:active { background: #ccc; }
+        .remote-btn svg { width: 22px; height: 22px; }
+        .remote-btn-label {
+            font-size: 0.6rem;
+            opacity: 0.5;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+        .remote-btn.danger { color: #ef4444; }
+        .remote-btn.success { color: #10b981; }
+        .remote-btn.warn { color: #f59e0b; }
+        .remote-play-row {
+            flex-shrink: 0;
+            border-bottom: 1px solid #111;
+        }
+        .remote-play-btn {
+            width: 100%;
+            min-height: 90px;
+            background: #000;
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            -webkit-tap-highlight-color: transparent;
+            transition: background 0.08s;
+        }
+        .remote-play-btn:active { background: #1a1a1a; }
+        .remote-play-btn.running { background: rgba(16,185,129,0.08); }
+        .remote-play-btn.running:active { background: rgba(16,185,129,0.15); }
+        .remote-play-btn svg { width: 40px; height: 40px; }
+        .remote-code-badge {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+            cursor: pointer;
+        }
+        .remote-code-badge label {
+            font-size: 0.55rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #444;
+            cursor: pointer;
+        }
+        .remote-code-badge .code-val {
+            font-family: var(--font-mono);
+            font-size: 0.95rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            color: #666;
+        }
     </style>
 </head>
 <body>
     <div id="app"></div>
 
     <script>
+        const ABLY_KEY = '5YG-IQ.nZdCtA:6qPkoD8tJhRK4UP57Wdis_2BnmykR7LvGPvYogPAOCc';
+
         // SVG Icons
         const icons = {
             Play: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5,3 19,12 5,21"></polygon></svg>`,
@@ -873,8 +1052,6 @@ this.blindLevels = [
     { level: 19, small: 30000, big: 60000 },
     { level: 20, small: 40000, big: 80000 },
     { level: 21, small: 50000, big: 100000 },
-    { level: 22, small: 60000, big: 120000 },
-    { level: 23, small: 75000, big: 150000 },    
 ];
 
                 this.showSetup = true;
@@ -893,6 +1070,7 @@ this.blindLevels = [
                 this.survivorChipValue = 10000;
                 this.survivorBonusTotal = 0;
                 this.lateRegCount = 0;
+                this.lateRegName = '';
                 this.showLateReg = false;
                 this.lateRegDraw = null;
                 this.lateRegStep = 'setup';
@@ -942,9 +1120,24 @@ this.blindLevels = [
                 this.userIsScrolling = false;
                 this.userScrollTimeout = null;
 
+                // Remote control
+                const _urlParams = new URLSearchParams(window.location.search);
+                this.isRemote = _urlParams.has('remote');
+                this.roomCode = this.isRemote
+                    ? _urlParams.get('remote').toUpperCase()
+                    : (() => {
+                        let c = localStorage.getItem('poker-room-code');
+                        if (!c) { c = Math.random().toString(36).substr(2,4).toUpperCase(); localStorage.setItem('poker-room-code', c); }
+                        return c;
+                    })();
+                this.ablyChannel = null;
+                this.ablyConnected = false;
+                this.remoteState = null; // last state snapshot received on remote
+
                 this.setupKeyboardShortcuts();
                 this.setupTimelineScrollListener();
                 this.setupFullscreenListener();
+                this.initAbly();
                 this.render();
                 this.startTimer();
             }
@@ -1061,6 +1254,7 @@ this.blindLevels = [
                         if (this.isRunning && this.breakTimeLeft > 0) {
                             this.breakTimeLeft--;
                             this.updateBreakDisplay();
+                            this.publishState();
                         } else if (this.isRunning && this.breakTimeLeft === 0) {
                             this.endBreak();
                         }
@@ -1080,6 +1274,7 @@ this.blindLevels = [
                         }
 
                         this.updateTimerDisplay();
+                        this.publishState();
                     } else if (this.timeLeft === 0 && this.isRunning && !this.isExtended && !isLastLevel) {
                         if (this.currentLevel < this.blindLevels.length - 1) {
                             const completedLevelNum = this.blindLevels[this.currentLevel].level;
@@ -1179,6 +1374,222 @@ this.blindLevels = [
                 const btnUndoRebuy = document.querySelector('[onclick="app.undoRebuy()"]');
                 if (btnUndoRebuy) btnUndoRebuy.disabled = !this.areRebuysOpen() || this.rebuys === 0;
             }
+
+            // ===== ABLY REMOTE CONTROL =====
+
+            initAbly() {
+                if (!window.Ably) return;
+                try {
+                    const client = new Ably.Realtime({ key: ABLY_KEY });
+                    const channel = client.channels.get(`risithai-${this.roomCode}`);
+                    this.ablyChannel = channel;
+
+                    client.connection.on('connected', () => {
+                        this.ablyConnected = true;
+                        if (this.isRemote) this.renderRemoteUpdate();
+                        else this.renderRoomCode();
+                    });
+                    client.connection.on('disconnected', () => {
+                        this.ablyConnected = false;
+                        if (this.isRemote) this.renderRemoteUpdate();
+                        else this.renderRoomCode();
+                    });
+                    client.connection.on('failed', () => {
+                        this.ablyConnected = false;
+                        if (this.isRemote) this.renderRemoteUpdate();
+                    });
+
+                    if (this.isRemote) {
+                        channel.subscribe('state', (msg) => {
+                            this.remoteState = msg.data;
+                            this.renderRemoteUpdate();
+                        });
+                    } else {
+                        channel.subscribe('cmd', (msg) => {
+                            this.executeRemoteCommand(msg.data);
+                        });
+                    }
+                } catch(e) { console.warn('Ably init failed:', e); }
+            }
+
+            publishState() {
+                if (!this.ablyChannel || this.isRemote || this.showSetup) return;
+                try {
+                    const cur = this.blindLevels[this.currentLevel];
+                    this.ablyChannel.publish('state', {
+                        levelNum:        cur.level,
+                        small:           cur.small,
+                        big:             cur.big,
+                        timeLeft:        this.timeLeft,
+                        totalTime:       this.totalTime,
+                        isRunning:       this.isRunning,
+                        isOnBreak:       this.isOnBreak,
+                        breakTimeLeft:   this.breakTimeLeft,
+                        playersRemaining: this.playersRemaining,
+                        totalPlayers:    this.setupData.totalPlayers,
+                        rebuys:          this.rebuys,
+                        areRebuysOpen:   this.areRebuysOpen(),
+                        isExtended:      this.isExtended,
+                    });
+                } catch(e) {}
+            }
+
+            sendCommand(cmd) {
+                if (!this.ablyChannel) return;
+                try { this.ablyChannel.publish('cmd', cmd); } catch(e) {}
+            }
+
+            executeRemoteCommand(cmd) {
+                const map = {
+                    toggleTimer:    () => this.toggleTimer(),
+                    nextLevel:      () => this.nextLevel(),
+                    prevLevel:      () => this.prevLevel(),
+                    addTwoMinutes:  () => this.addTwoMinutes(),
+                    toggleExtend:   () => this.toggleExtend(),
+                    eliminatePlayer:() => this.eliminatePlayer(),
+                    addPlayer:      () => this.addPlayer(),
+                    addRebuy:       () => this.addRebuy(),
+                    undoRebuy:      () => this.undoRebuy(),
+                };
+                if (map[cmd]) {
+                    map[cmd]();
+                    this.publishState();
+                }
+            }
+
+            // Patch just the room-code badge without a full re-render
+            renderRoomCode() {
+                const el = document.getElementById('remote-code-badge');
+                if (!el) return;
+                el.innerHTML = this.roomCodeBadgeHTML();
+            }
+
+            roomCodeBadgeHTML() {
+                const url = `${location.origin}${location.pathname}?remote=${this.roomCode}`;
+                const dotClass = this.ablyConnected ? 'live' : 'waiting';
+                const dotTitle = this.ablyConnected ? 'Connected' : 'Connecting…';
+                return `
+                    <label>Remote</label>
+                    <div style="display:flex;align-items:center;gap:0.4rem;">
+                        <div class="remote-conn-dot ${dotClass}" title="${dotTitle}"></div>
+                        <span class="code-val" onclick="app.copyRemoteUrl()" title="Tap to copy remote URL">${this.roomCode}</span>
+                    </div>`;
+            }
+
+            copyRemoteUrl() {
+                const url = `${location.origin}${location.pathname}?remote=${this.roomCode}`;
+                navigator.clipboard.writeText(url).catch(() => {});
+                // Brief flash feedback
+                const el = document.querySelector('.code-val');
+                if (el) { const orig = el.textContent; el.textContent = 'COPIED!'; setTimeout(() => { if(el) el.textContent = orig; }, 1200); }
+            }
+
+            // Called by remote to do a full re-render of the remote UI
+            renderRemoteUpdate() {
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            renderRemote() {
+                const s = this.remoteState;
+                const connected = this.ablyConnected;
+
+                const connHTML = `
+                    <div class="remote-conn">
+                        <div class="remote-conn-dot ${connected ? 'live' : 'waiting'}"></div>
+                        ${connected ? (s ? 'Live' : 'Waiting…') : 'Connecting…'}
+                    </div>`;
+
+                let stateHTML = '';
+                if (s) {
+                    const timeStr = s.isOnBreak ? this.formatTime(s.breakTimeLeft) :
+                                    s.isExtended ? 'EXT' : this.formatTime(s.timeLeft);
+                    const breakColor = s.isOnBreak ? 'break-color' : '';
+                    stateHTML = `
+                        <div class="remote-state-bar">
+                            <div class="remote-state-row">
+                                <div class="remote-time-display ${breakColor}">${timeStr}</div>
+                                <div class="remote-level-display">
+                                    ${s.isOnBreak ? '<strong>BREAK</strong>' : `L<strong>${s.levelNum}</strong> &nbsp;${this.formatNumber(s.small)}/${this.formatNumber(s.big)}`}
+                                </div>
+                                <div class="remote-players-display">${s.playersRemaining}/${s.totalPlayers} players</div>
+                            </div>
+                        </div>`;
+                } else {
+                    stateHTML = `
+                        <div class="remote-waiting">
+                            <div>Waiting for the host to start…</div>
+                            <div style="margin-top:0.5rem;font-size:0.75rem;">Make sure the app is open on the MacBook</div>
+                        </div>`;
+                }
+
+                const rebuysOpen = s ? s.areRebuysOpen : false;
+                const isRunning = s ? s.isRunning : false;
+                const isOnBreak = s ? s.isOnBreak : false;
+                const isExtended = s ? s.isExtended : false;
+
+                const controlsHTML = s ? `
+                    <div class="remote-controls">
+                        <div class="remote-play-row">
+                            <button class="remote-play-btn ${isRunning ? 'running' : ''}" onclick="app.sendCommand('toggleTimer')">
+                                ${isRunning
+                                    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`
+                                    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5,3 19,12 5,21"></polygon></svg>`
+                                }
+                            </button>
+                        </div>
+
+                        <div class="remote-row">
+                            <button class="remote-btn" onclick="app.sendCommand('prevLevel')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="19,20 9,12 19,4"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
+                                <span class="remote-btn-label">Prev Level</span>
+                            </button>
+                            <button class="remote-btn" onclick="app.sendCommand('nextLevel')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5,4 15,12 5,20"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
+                                <span class="remote-btn-label">Next Level</span>
+                            </button>
+                            <button class="remote-btn" ${isOnBreak ? 'disabled' : ''} onclick="app.sendCommand('addTwoMinutes')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12,6 12,12 16,14"></polyline></svg>
+                                <span class="remote-btn-label">+2 Min</span>
+                            </button>
+                            <button class="remote-btn ${isExtended ? 'warn' : ''}" ${isOnBreak ? 'disabled' : ''} onclick="app.sendCommand('toggleExtend')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-14 9V3z"></path><line x1="19" y1="3" x2="19" y2="21"></line></svg>
+                                <span class="remote-btn-label">${isExtended ? 'Extended' : 'Extend'}</span>
+                            </button>
+                        </div>
+
+                        <div class="remote-row">
+                            <button class="remote-btn danger" onclick="app.sendCommand('eliminatePlayer')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                <span class="remote-btn-label">Out</span>
+                            </button>
+                            <button class="remote-btn" onclick="app.sendCommand('addPlayer')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                                <span class="remote-btn-label">Undo Out</span>
+                            </button>
+                            ${rebuysOpen ? `
+                            <button class="remote-btn success" onclick="app.sendCommand('addRebuy')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                <span class="remote-btn-label">Rebuy</span>
+                            </button>
+                            <button class="remote-btn" onclick="app.sendCommand('undoRebuy')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                                <span class="remote-btn-label">Undo Rebuy</span>
+                            </button>` : ''}
+                        </div>
+                    </div>` : '';
+
+                return `
+                    <div class="remote-layout">
+                        <div class="remote-header">
+                            <div class="remote-title">Risithai Poker Tour</div>
+                            ${connHTML}
+                        </div>
+                        ${stateHTML}
+                        ${controlsHTML}
+                    </div>`;
+            }
+
+            // ===== END ABLY =====
 
             initAudioContext() {
                 if (!this.audioContextInitialized) {
@@ -1322,6 +1733,7 @@ this.blindLevels = [
             }
 
             render() {
+                if (this.isRemote) { this.renderRemoteUpdate(); return; }
                 const app = document.getElementById('app');
                 
                 // Save scroll positions before render (DOM will be destroyed)
@@ -1391,6 +1803,9 @@ this.blindLevels = [
                             <div class="setup-header">
                                 <h1 class="setup-title">TOURNAMENT SETUP</h1>
                                 <p class="setup-subtitle">Configure your poker game settings</p>
+                                <div id="remote-code-badge" class="remote-code-badge" style="margin-top:1rem;justify-content:center;align-items:center;display:flex;flex-direction:column;gap:0.2rem;">
+                                    ${this.roomCodeBadgeHTML()}
+                                </div>
                             </div>
 
                             <div class="setup-card">
@@ -2259,9 +2674,14 @@ this.blindLevels = [
                 }
                 this.lateRegStep = 'setup';
                 this.lateRegDraw = null;
+                this.lateRegName = '';
                 this.showLateReg = true;
                 this.controlPanelOpen = false;
                 this.render();
+            }
+
+            setLateRegName(value) {
+                this.lateRegName = value.trim();
             }
 
             adjustLateRegCount(key, delta) {
@@ -2288,7 +2708,12 @@ this.blindLevels = [
                 this.playersRemaining++;
                 this.lateRegCount++;
 
-                this.lateRegDraw = { table: tableNames[chosenKey] };
+                // Add to redraw pool so they appear in future reseats
+                const name = this.lateRegName || `Late Reg ${this.lateRegCount}`;
+                this.originalPlayerNames.push(name);
+                this.redrawSelections.push(false);
+
+                this.lateRegDraw = { table: tableNames[chosenKey], name };
                 this.lateRegStep = 'result';
                 this.render();
             }
@@ -2308,15 +2733,16 @@ this.blindLevels = [
                 const tableNames = { pokerTable: 'Poker Table', kitchenTable: 'Kitchen Table', poolTable: 'Pool Table' };
 
                 if (this.lateRegStep === 'result') {
-                    const { table } = this.lateRegDraw;
+                    const { table, name } = this.lateRegDraw;
                     return `
                         <div class="modal-overlay">
                             <div class="modal-content" style="text-align:center;min-width:260px;">
                                 <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.15em;color:var(--text-dim);margin-bottom:1.5rem;">Late Registration</div>
+                                <div style="font-size:1.5rem;font-weight:700;margin-bottom:0.25rem;">${name}</div>
                                 <div style="font-size:2rem;font-family:var(--font-mono);font-weight:800;line-height:1.2;margin-bottom:0.5rem;">
                                     ${table}
                                 </div>
-                                <div style="font-size:0.85rem;color:var(--accent);font-weight:600;margin-bottom:1.5rem;">
+                                <div style="font-size:0.85rem;color:var(--accent-color);font-weight:600;margin-bottom:1.5rem;">
                                     Enter as Big Blind on the next hand
                                 </div>
                                 <div style="font-size:0.75rem;color:var(--text-dim);margin-bottom:1.5rem;">
@@ -2331,15 +2757,29 @@ this.blindLevels = [
                 const total = tableKeys.reduce((s, k) => s + (this.lateRegTableCounts[k] || 0), 0);
                 const expected = this.playersRemaining;
                 const totalOk = total === expected;
+                const nameOk = this.lateRegName.length > 0;
+                const canAssign = totalOk && nameOk;
                 return `
                     <div class="modal-overlay">
-                        <div class="modal-content" style="min-width:280px;">
+                        <div class="modal-content" style="min-width:300px;">
                             <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.15em;color:var(--text-dim);text-align:center;margin-bottom:1.25rem;">
                                 Late Registration
                             </div>
-                            <div style="font-size:0.8rem;color:var(--text-dim);text-align:center;margin-bottom:1rem;">
-                                Set current player count per table
+
+                            <div style="margin-bottom:1.25rem;">
+                                <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:0.5rem;">Player Name</div>
+                                <input
+                                    type="text"
+                                    class="setup-input"
+                                    placeholder="Enter name…"
+                                    value="${this.lateRegName}"
+                                    oninput="app.setLateRegName(this.value)"
+                                    style="-webkit-user-select:text;user-select:text;"
+                                    autocomplete="off"
+                                >
                             </div>
+
+                            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:0.5rem;">Current players per table</div>
                             <div style="display:flex;flex-direction:column;gap:0.75rem;margin-bottom:1rem;">
                                 ${tableKeys.map(key => `
                                     <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;">
@@ -2355,7 +2795,7 @@ this.blindLevels = [
                             <div style="text-align:center;font-size:0.8rem;margin-bottom:1rem;${totalOk ? 'color:var(--text-dim);' : 'color:#ef4444;font-weight:600;'}">
                                 Total: ${total} / ${expected} players${totalOk ? '' : ' — adjust counts to match'}
                             </div>
-                            <button onclick="app.confirmLateRegDraw()" class="btn btn-primary" style="width:100%;padding:0.75rem;" ${totalOk ? '' : 'disabled'}>
+                            <button onclick="app.confirmLateRegDraw()" class="btn btn-primary" style="width:100%;padding:0.75rem;" ${canAssign ? '' : 'disabled'}>
                                 Assign Table
                             </button>
                             <button onclick="app.closeLateReg()" class="btn btn-secondary" style="width:100%;padding:0.6rem;margin-top:0.5rem;">
@@ -2836,6 +3276,7 @@ this.blindLevels = [
                 this.breakTotalTime = 0;
                 this.survivorBonusTotal = 0;
                 this.lateRegCount = 0;
+                this.lateRegName = '';
                 this.showLateReg = false;
                 this.lateRegDraw = null;
                 this.lateRegStep = 'setup';
@@ -2993,6 +3434,7 @@ this.blindLevels = [
                 } else {
                     this.updateTimerDisplay();
                 }
+                this.publishState();
             }
 
             addTwoMinutes() {
