@@ -1160,6 +1160,10 @@ this.blindLevels = [
                 this.remoteRedrawTableCount = 1;
                 this.remoteRedrawPending = false;
 
+                // Patch-not-replace bookkeeping (remote only)
+                this.remoteRendered = false;   // true once main grid has been built
+                this.remoteLastFlow = null;    // tracks which flow was active last tick
+
                 this.setupKeyboardShortcuts();
                 this.setupTimelineScrollListener();
                 this.setupFullscreenListener();
@@ -1637,12 +1641,81 @@ this.blindLevels = [
                 if (el) { const orig = el.textContent; el.textContent = 'COPIED!'; setTimeout(() => { if(el) el.textContent = orig; }, 1200); }
             }
 
-            // Called by remote to do a full re-render of the remote UI
-            renderRemoteUpdate() {
-                // Don't replace the DOM while the user is typing the late-reg name —
-                // the timer tick fires every second and would reset their text input.
-                if (this.remoteFlow === 'lateReg' && !this.remoteLateRegPending) return;
+            // ── Full rebuild helper — always call instead of direct innerHTML ──
+            rebuildRemote() {
+                this.remoteLastFlow = this.remoteFlow;
+                this.remoteRendered = true;
                 document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            // ── Patch only the live-updating parts of the main grid ──────────
+            patchRemoteMain(s) {
+                if (!s) return;
+
+                const setBtn = (id, dimmed) => {
+                    const el = document.getElementById(id);
+                    if (!el) return;
+                    el.style.opacity = dimmed ? '0.2' : '1';
+                    el.disabled = !!dimmed;
+                };
+                setBtn('r-btn-play',      s.isRunning);
+                setBtn('r-btn-pause',    !s.isRunning);
+                setBtn('r-btn-rebuy',    !s.areRebuysOpen);
+                setBtn('r-btn-undo-rebuy', !s.areRebuysOpen);
+                setBtn('r-btn-undo-out', !s.lastEliminatedName);
+
+                // Undo-Out label contains the eliminated name — patch text too
+                const undoEl = document.getElementById('r-btn-undo-out');
+                if (undoEl) {
+                    undoEl.textContent = s.lastEliminatedName
+                        ? `↩ ${s.lastEliminatedName}`
+                        : 'Undo Out';
+                }
+
+                // Connection dot (updates on reconnect without full rebuild)
+                const dotEl  = document.getElementById('r-conn-dot');
+                const textEl = document.getElementById('r-conn-text');
+                const live   = this.ablyConnected;
+                if (dotEl)  { dotEl.className = `remote-conn-dot ${live ? 'live' : 'waiting'}`; dotEl.style.width='8px'; dotEl.style.height='8px'; }
+                if (textEl)   textEl.textContent = live ? 'Live' : 'Connecting…';
+            }
+
+            // ── Timer-tick entry point (called every second on remote) ────────
+            renderRemoteUpdate() {
+                const s = this.remoteState;
+
+                // ── lateReg: block DOM during typing; rebuild only when result arrives ──
+                if (this.remoteFlow === 'lateReg') {
+                    if (!this.remoteLateRegPending) return; // user still typing — never touch DOM
+                    if (s && s.lateRegDraw && this.remoteLastFlow !== 'lateReg-result') {
+                        this.remoteLastFlow = 'lateReg-result';
+                        document.getElementById('app').innerHTML = this.renderRemote();
+                    }
+                    return;
+                }
+
+                // ── redraw: protect setup screen; rebuild only when result arrives ──
+                if (this.remoteFlow === 'redraw' && this.remoteRedrawPending) {
+                    if (s && s.redrawResult && this.remoteLastFlow !== 'redraw-result') {
+                        this.remoteLastFlow = 'redraw-result';
+                        document.getElementById('app').innerHTML = this.renderRemote();
+                    }
+                    return;
+                }
+
+                // ── any other sub-flow (eliminate, redraw setup): freeze the DOM ──
+                if (this.remoteFlow !== null) return;
+
+                // ── main grid ──────────────────────────────────────────────────
+                if (!this.remoteRendered || this.remoteLastFlow !== null) {
+                    // First render, or returning from a flow — full rebuild
+                    this.remoteLastFlow = null;
+                    this.remoteRendered = true;
+                    document.getElementById('app').innerHTML = this.renderRemote();
+                    return;
+                }
+                // Already on main grid — patch only (no scroll reset, no caret loss)
+                if (s) this.patchRemoteMain(s);
             }
 
             renderRemote() {
@@ -1668,41 +1741,17 @@ this.blindLevels = [
                 }
 
                 const isRunning  = s ? s.isRunning   : false;
-                const isOnBreak  = s ? s.isOnBreak   : false;
                 const rebuysOpen = s ? s.areRebuysOpen : false;
-
-                // ── status bar ──────────────────────────────────────────
-                let statusBar = '';
-                if (s) {
-                    const timeStr = s.isOnBreak ? this.formatTime(s.breakTimeLeft)
-                                  : s.isExtended ? 'EXT'
-                                  : this.formatTime(s.timeLeft);
-                    const levelStr = s.isOnBreak ? 'BREAK'
-                                   : `L${s.levelNum} · ${this.formatNumber(s.small)} / ${this.formatNumber(s.big)}`;
-                    statusBar = `
-                        <div style="display:flex;align-items:center;justify-content:space-between;
-                                    padding:0.75rem 1.25rem;background:#0a0a0a;border-bottom:2px solid #1a1a1a;
-                                    font-family:var(--font-mono);flex-shrink:0;">
-                            <span style="font-size:1.5rem;font-weight:800;letter-spacing:-0.03em;
-                                         color:${s.isOnBreak ? '#f59e0b' : '#fff'};">${timeStr}</span>
-                            <span style="font-size:0.85rem;color:#888;">${levelStr}</span>
-                            <span style="font-size:0.85rem;color:#888;">${s.playersRemaining}/${s.totalPlayers}</span>
-                        </div>`;
-                } else {
-                    statusBar = `
-                        <div style="padding:2rem;text-align:center;color:#555;flex-shrink:0;border-bottom:2px solid #111;">
-                            <div style="font-size:1rem;">Waiting for host…</div>
-                            <div style="font-size:0.8rem;margin-top:0.4rem;color:#333;">Open the app on the MacBook first</div>
-                        </div>`;
-                }
 
                 // ── helper to build one cell ─────────────────────────────
                 const cell = (label, onclick, opts = {}) => {
-                    const { color = '#fff', bg = '#000', dimmed = false, span = false } = opts;
+                    const { color = '#fff', bg = '#000', dimmed = false, span = false, id = '' } = opts;
                     const opacity = dimmed ? '0.2' : '1';
                     const spanStyle = span ? 'grid-column:1 / -1;' : '';
+                    const idAttr = id ? `id="${id}"` : '';
                     return `
                         <button
+                            ${idAttr}
                             ${dimmed ? 'disabled' : ''}
                             onclick="${onclick}"
                             style="${spanStyle}background:${bg};color:${color};opacity:${opacity};
@@ -1719,56 +1768,55 @@ this.blindLevels = [
 
                 const hasPlayers = s && s.originalPlayerNames && s.originalPlayerNames.length > 0;
 
-                // ── grid (only when host state is known) ─────────────────
-                // Wrap in a scrollable div so that on short phones the bottom
-                // buttons aren't permanently hidden behind overflow:hidden.
-                const grid = s ? `
-                    <div class="remote-scroll-area">
-                        <div style="display:grid;grid-template-columns:1fr 1fr;
-                                    grid-template-rows:repeat(6,minmax(82px,1fr));
-                                    gap:4px;background:#1a1a1a;min-height:100%;">
+                // ── grid ─────────────────────────────────────────────────
+                const gridContent = s ? `
+                    <div style="display:grid;grid-template-columns:1fr 1fr;
+                                grid-template-rows:repeat(6,1fr);
+                                gap:4px;background:#1a1a1a;height:100%;">
 
-                            ${cell('▶&nbsp; Play',  "app.sendCommand('toggleTimer')", { color:'#10b981', bg:'#061a0e', dimmed: isRunning })}
-                            ${cell('⏸&nbsp; Pause', "app.sendCommand('toggleTimer')", { color:'#f59e0b', bg:'#1a1100', dimmed: !isRunning })}
+                        ${cell('▶&nbsp; Play',  "app.sendCommand('toggleTimer')", { color:'#10b981', bg:'#061a0e', dimmed: isRunning,  id:'r-btn-play'  })}
+                        ${cell('⏸&nbsp; Pause', "app.sendCommand('toggleTimer')", { color:'#f59e0b', bg:'#1a1100', dimmed: !isRunning, id:'r-btn-pause' })}
 
-                            ${cell('← Prev Level', "app.sendCommand('prevLevel')", { color:'#ccc', bg:'#0a0a0a' })}
-                            ${cell('Next Level →', "app.sendCommand('nextLevel')", { color:'#ccc', bg:'#0a0a0a' })}
+                        ${cell('← Prev Level', "app.sendCommand('prevLevel')", { color:'#ccc', bg:'#0a0a0a' })}
+                        ${cell('Next Level →', "app.sendCommand('nextLevel')", { color:'#ccc', bg:'#0a0a0a' })}
 
-                            ${cell('Player Out', 'app.remoteStartEliminate()', { color:'#ef4444', bg:'#160404' })}
-                            ${cell('Undo Out',
-                                   s.lastEliminatedName ? 'app.remoteUndoEliminate()' : '',
-                                   { color:'#888', bg:'#0a0a0a', dimmed: !s.lastEliminatedName })}
+                        ${cell('Player Out', 'app.remoteStartEliminate()', { color:'#ef4444', bg:'#160404' })}
+                        ${cell(s.lastEliminatedName ? `↩ ${s.lastEliminatedName}` : 'Undo Out',
+                               s.lastEliminatedName ? 'app.remoteUndoEliminate()' : '',
+                               { color:'#888', bg:'#0a0a0a', dimmed: !s.lastEliminatedName, id:'r-btn-undo-out' })}
 
-                            ${cell('Rebuy',  "app.sendCommand('addRebuy')",  { color:'#10b981', bg:'#061a0e', dimmed: !rebuysOpen })}
-                            ${cell('Cancel', "app.sendCommand('undoRebuy')", { color:'#888',    bg:'#0a0a0a', dimmed: !rebuysOpen })}
+                        ${cell('Rebuy',  "app.sendCommand('addRebuy')",  { color:'#10b981', bg:'#061a0e', dimmed: !rebuysOpen, id:'r-btn-rebuy'      })}
+                        ${cell('Cancel', "app.sendCommand('undoRebuy')", { color:'#888',    bg:'#0a0a0a', dimmed: !rebuysOpen, id:'r-btn-undo-rebuy' })}
 
-                            ${cell('+2 Min',   "app.sendCommand('addTwoMinutes')", { color:'#ccc',    bg:'#0a0a0a' })}
-                            ${cell('Late Reg', 'app.remoteStartLateReg()',         { color:'#3b82f6', bg:'#04101f' })}
+                        ${cell('+2 Min',   "app.sendCommand('addTwoMinutes')", { color:'#ccc',    bg:'#0a0a0a' })}
+                        ${cell('Late Reg', 'app.remoteStartLateReg()',         { color:'#3b82f6', bg:'#04101f' })}
 
-                            ${cell('Redraw Seats', hasPlayers ? 'app.remoteStartRedraw()' : '',
-                                   { color: hasPlayers ? '#fff' : '#444', bg:'#111', span: true, dimmed: !hasPlayers })}
+                        ${cell('Redraw Seats', hasPlayers ? 'app.remoteStartRedraw()' : '',
+                               { color: hasPlayers ? '#fff' : '#444', bg:'#111', span: true, dimmed: !hasPlayers })}
 
-                        </div>
-                    </div>` : '';
-
-                // ── connection dot ────────────────────────────────────────
-                const dot = `<div class="remote-conn-dot ${connected ? 'live' : 'waiting'}" style="width:8px;height:8px;"></div>`;
+                    </div>` : `
+                    <div style="flex:1;display:flex;align-items:center;justify-content:center;
+                                flex-direction:column;gap:0.5rem;color:#333;">
+                        <div style="font-size:0.95rem;">Waiting for host…</div>
+                        <div style="font-size:0.75rem;color:#222;">Open the app on the MacBook first</div>
+                    </div>`;
 
                 return `
                     <div class="remote-layout">
 
-                        <div style="display:flex;align-items:center;justify-content:space-between;
-                                    padding:0.6rem 1rem;border-bottom:1px solid #111;flex-shrink:0;">
-                            <span style="font-size:0.65rem;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;">
-                                Risithai Poker Tour
-                            </span>
-                            <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.65rem;color:#666;">
-                                ${dot} ${connected ? (s ? 'Live' : 'Waiting…') : 'Connecting…'}
+                        <!-- connection pill -->
+                        <div style="display:flex;align-items:center;justify-content:flex-end;
+                                    padding:0.3rem 0.75rem;flex-shrink:0;">
+                            <div style="display:flex;align-items:center;gap:0.3rem;font-size:0.6rem;color:#444;">
+                                <div id="r-conn-dot" class="remote-conn-dot ${connected ? 'live' : 'waiting'}" style="width:6px;height:6px;"></div>
+                                <span id="r-conn-text">${connected ? (s ? 'Live' : 'Waiting…') : 'Connecting…'}</span>
                             </div>
                         </div>
 
-                        ${statusBar}
-                        ${grid}
+                        <!-- buttons fill everything below the strip -->
+                        <div style="flex:1;min-height:0;display:flex;flex-direction:column;">
+                            ${gridContent}
+                        </div>
                     </div>`;
             }
 
@@ -1791,16 +1839,36 @@ this.blindLevels = [
                 this.remoteLateRegName = '';
                 this.remoteLateRegPending = false;
                 this.remoteFlow = 'lateReg';
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             remoteAdjustLateRegCount(key, delta) {
                 this.remoteLateRegCounts[key] = Math.max(0, (this.remoteLateRegCounts[key] || 0) + delta);
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             remoteSetLateRegName(value) {
-                this.remoteLateRegName = value; // keep raw; don't re-render (preserves caret)
+                this.remoteLateRegName = value;
+                // Patch only the confirm button — never touch the input itself (preserves caret/keyboard)
+                const btn = document.getElementById('r-late-reg-confirm');
+                if (!btn) return;
+                const s = this.remoteState;
+                const namedMode = s && s.activePlayers && s.activePlayers.length > 0;
+                const nameOk = value.trim().length > 0;
+                let canAssign;
+                if (namedMode) {
+                    canAssign = nameOk;
+                } else {
+                    const tc = s ? (s.tableCount || 1) : 1;
+                    const keys = ['pokerTable', 'kitchenTable', 'poolTable'].slice(0, tc);
+                    const total = keys.reduce((sum, k) => sum + (this.remoteLateRegCounts[k] || 0), 0);
+                    const expected = s ? s.playersRemaining : 0;
+                    canAssign = nameOk && (total === expected);
+                }
+                canAssign = canAssign && !this.remoteLateRegPending;
+                btn.disabled = !canAssign;
+                btn.style.background = canAssign ? '#10b981' : '#1a2a22';
+                btn.style.color      = canAssign ? '#fff'    : '#2a4a3a';
             }
 
             remoteConfirmLateReg() {
@@ -1808,20 +1876,20 @@ this.blindLevels = [
                 if (!this.remoteLateRegName) return;
                 this.remoteLateRegPending = true;
                 this.sendCommand({ type: 'confirmLateReg', name: this.remoteLateRegName, tableCounts: {...this.remoteLateRegCounts} });
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             remoteDoneLateReg() {
                 this.sendCommand({ type: 'closeLateReg' });
                 this.remoteFlow = null;
                 this.remoteLateRegPending = false;
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             remoteCancelLateReg() {
                 this.remoteFlow = null;
                 this.remoteLateRegPending = false;
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             renderRemoteLateRegSetup(s, connected) {
@@ -1926,7 +1994,8 @@ this.blindLevels = [
                         <!-- bottom action buttons -->
                         <div style="padding:1rem 1.25rem;display:flex;flex-direction:column;gap:0.6rem;flex-shrink:0;
                                     border-top:1px solid #111;">
-                            <button onclick="app.remoteConfirmLateReg()"
+                            <button id="r-late-reg-confirm"
+                                    onclick="app.remoteConfirmLateReg()"
                                     ${canAssign ? '' : 'disabled'}
                                     style="width:100%;padding:1.1rem;border:none;border-radius:0.5rem;
                                            background:${canAssign ? '#10b981' : '#1a2a22'};
@@ -2007,7 +2076,7 @@ this.blindLevels = [
                 // If we have named players, show the picker; otherwise send anonymous decrement
                 if (s.activePlayers && s.activePlayers.length > 0) {
                     this.remoteFlow = 'eliminate';
-                    document.getElementById('app').innerHTML = this.renderRemote();
+                    this.rebuildRemote();
                 } else {
                     // Anonymous fallback
                     this.sendCommand({ type: 'confirmEliminate', name: null });
@@ -2017,12 +2086,12 @@ this.blindLevels = [
             remoteConfirmEliminate(name) {
                 this.sendCommand({ type: 'confirmEliminate', name });
                 this.remoteFlow = null;
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             remoteCancelEliminate() {
                 this.remoteFlow = null;
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             remoteUndoEliminate() {
@@ -2103,17 +2172,17 @@ this.blindLevels = [
                 this.remoteRedrawTableCount = s.tableCount || 1;
                 this.remoteRedrawPending = false;
                 this.remoteFlow = 'redraw';
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             remoteToggleRedrawPlayer(index) {
                 this.remoteRedrawSelections[index] = !this.remoteRedrawSelections[index];
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             remoteSetRedrawTableCount(count) {
                 this.remoteRedrawTableCount = count;
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             remoteConfirmRedraw() {
@@ -2123,20 +2192,20 @@ this.blindLevels = [
                 if (selectedPlayers.length < 2) return;
                 this.remoteRedrawPending = true;
                 this.sendCommand({ type: 'performRedraw', players: selectedPlayers, tableCount: this.remoteRedrawTableCount });
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             remoteDoneRedraw() {
                 this.sendCommand({ type: 'closeRedraw' });
                 this.remoteFlow = null;
                 this.remoteRedrawPending = false;
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             remoteCancelRedraw() {
                 this.remoteFlow = null;
                 this.remoteRedrawPending = false;
-                document.getElementById('app').innerHTML = this.renderRemote();
+                this.rebuildRemote();
             }
 
             renderRemoteRedrawSetup(s, connected) {
