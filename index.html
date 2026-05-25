@@ -1134,6 +1134,22 @@ this.blindLevels = [
                 this.ablyConnected = false;
                 this.remoteState = null; // last state snapshot received on remote
 
+                // Named-player tracking (populated when seating draw is used)
+                this.activePlayers = [];    // names of players currently in the tournament
+                this.playerTableMap = {};   // { playerName: 'pokerTable' | 'kitchenTable' | 'poolTable' }
+                this.showEliminateModal = false;
+                this.lastEliminated = null; // { name, table } — for single-undo
+
+                // Remote flow state (phone-side only — not used on host)
+                this.remoteFlow = null; // null | 'lateReg' | 'redraw' | 'eliminate'
+                this.remoteLateRegName = '';
+                this.remoteLateRegCounts = {};
+                this.remoteLateRegPending = false;
+                this.remoteRedrawSelections = [];
+                this.remoteRedrawPool = [];
+                this.remoteRedrawTableCount = 1;
+                this.remoteRedrawPending = false;
+
                 this.setupKeyboardShortcuts();
                 this.setupTimelineScrollListener();
                 this.setupFullscreenListener();
@@ -1366,7 +1382,9 @@ this.blindLevels = [
                 if (btnEliminate) btnEliminate.disabled = this.playersRemaining <= 1;
 
                 const btnAddPlayer = document.querySelector('[onclick="app.addPlayer()"]');
-                if (btnAddPlayer) btnAddPlayer.disabled = this.playersRemaining >= this.setupData.totalPlayers;
+                if (btnAddPlayer) btnAddPlayer.disabled = this.activePlayers.length > 0
+                    ? !this.lastEliminated
+                    : this.playersRemaining >= this.setupData.totalPlayers;
 
                 const btnAddRebuy = document.querySelector('[onclick="app.addRebuy()"]');
                 if (btnAddRebuy) btnAddRebuy.disabled = !this.areRebuysOpen();
@@ -1430,6 +1448,14 @@ this.blindLevels = [
                         rebuys:          this.rebuys,
                         areRebuysOpen:   this.areRebuysOpen(),
                         isExtended:      this.isExtended,
+                        // For remote late-reg / redraw / eliminate flows
+                        tableCount:          this.tableCount,
+                        lateRegTableCounts:  {...this.lateRegTableCounts},
+                        originalPlayerNames: [...this.originalPlayerNames],
+                        activePlayers:       [...this.activePlayers],
+                        lastEliminatedName:  this.lastEliminated ? this.lastEliminated.name : null,
+                        lateRegDraw:         this.lateRegDraw,
+                        redrawResult:        this.redrawResult,
                     });
                 } catch(e) {}
             }
@@ -1440,16 +1466,124 @@ this.blindLevels = [
             }
 
             executeRemoteCommand(cmd) {
+                // ── Object commands (phone flows) ─────────────────────────
+                if (cmd && typeof cmd === 'object' && cmd.type) {
+                    if (cmd.type === 'confirmEliminate') {
+                        // Phone selected who is out
+                        const name = cmd.name;
+                        if (name && this.activePlayers.includes(name)) {
+                            this.lastEliminated = { name, table: this.playerTableMap[name] || null };
+                            this.activePlayers = this.activePlayers.filter(p => p !== name);
+                            delete this.playerTableMap[name];
+                            this.playersRemaining = this.activePlayers.length;
+                            if (this.playersRemaining === 1) this.createConfetti();
+                            this.recomputeTableCounts();
+                            this.updateStats();
+                            this.publishState();
+                        } else if (!name && this.playersRemaining > 1) {
+                            // Anonymous fallback (no named players)
+                            this.playersRemaining--;
+                            if (this.playersRemaining === 1) this.createConfetti();
+                            this.updateStats();
+                            this.publishState();
+                        }
+                        return;
+                    }
+                    if (cmd.type === 'undoEliminate') {
+                        if (this.lastEliminated) {
+                            const { name, table } = this.lastEliminated;
+                            this.activePlayers.push(name);
+                            if (table) this.playerTableMap[name] = table;
+                            this.playersRemaining = this.activePlayers.length;
+                            this.lastEliminated = null;
+                            this.recomputeTableCounts();
+                        } else if (!this.activePlayers.length && this.playersRemaining < this.setupData.totalPlayers) {
+                            this.playersRemaining++;
+                        }
+                        this.updateStats();
+                        this.publishState();
+                        return;
+                    }
+                    if (cmd.type === 'confirmLateReg') {
+                        // Phone has resolved name + table counts — process the assignment
+                        this.lateRegName = cmd.name || '';
+                        this.lateRegTableCounts = cmd.tableCounts || {};
+                        // Re-run confirmLateRegDraw logic without calling render() or showLateReg
+                        const tableKeys = this.tableCount === 1
+                            ? ['pokerTable']
+                            : this.tableCount === 2
+                                ? ['pokerTable', 'kitchenTable']
+                                : ['pokerTable', 'kitchenTable', 'poolTable'];
+                        const tableNames = { pokerTable: 'Poker Table', kitchenTable: 'Kitchen Table', poolTable: 'Pool Table' };
+                        const minCount = Math.min(...tableKeys.map(k => this.lateRegTableCounts[k] || 0));
+                        const candidates = tableKeys.filter(k => (this.lateRegTableCounts[k] || 0) === minCount);
+                        const chosenKey = candidates[Math.floor(Math.random() * candidates.length)];
+                        this.lateRegTableCounts[chosenKey] = (this.lateRegTableCounts[chosenKey] || 0) + 1;
+                        this.setupData.totalPlayers++;
+                        this.playersRemaining++;
+                        this.lateRegCount++;
+                        const name = this.lateRegName || `Late Reg ${this.lateRegCount}`;
+                        this.originalPlayerNames.push(name);
+                        this.redrawSelections.push(false);
+                        this.lateRegDraw = { table: tableNames[chosenKey], name };
+                        // Track in active players + table map if named mode is active
+                        if (this.activePlayers.length > 0 || this.originalPlayerNames.length > 0) {
+                            this.activePlayers.push(name);
+                            this.playerTableMap[name] = chosenKey;
+                        }
+                        this.updateStats(); // lightweight DOM patch for counts
+                        this.publishState();
+                        return;
+                    }
+                    if (cmd.type === 'closeLateReg') {
+                        this.lateRegDraw = null;
+                        this.publishState();
+                        return;
+                    }
+                    if (cmd.type === 'performRedraw') {
+                        // Phone sends player names + tableCount — compute result (no animation)
+                        const players = cmd.players || [];
+                        this.redrawTableCount = cmd.tableCount || 1;
+                        if (players.length >= 2) {
+                            const shuffled = this.shuffleArray([...players]);
+                            if (this.redrawTableCount === 1) {
+                                this.redrawResult = [{ name: 'Poker Table', players: shuffled }];
+                            } else {
+                                const count1 = Math.ceil(shuffled.length / 2);
+                                this.redrawResult = [
+                                    { name: 'Poker Table',   players: shuffled.slice(0, count1) },
+                                    { name: 'Kitchen Table', players: shuffled.slice(count1) },
+                                ];
+                            }
+                            // Update playerTableMap with new seats
+                            const nameToKey = { 'Poker Table': 'pokerTable', 'Kitchen Table': 'kitchenTable', 'Pool Table': 'poolTable' };
+                            for (const t of this.redrawResult) {
+                                const key = nameToKey[t.name] || 'pokerTable';
+                                for (const p of t.players) this.playerTableMap[p] = key;
+                            }
+                            this.recomputeTableCounts();
+                        }
+                        this.publishState();
+                        return;
+                    }
+                    if (cmd.type === 'closeRedraw') {
+                        this.redrawResult = null;
+                        this.publishState();
+                        return;
+                    }
+                    return;
+                }
+                // ── String commands (main grid buttons) ───────────────────
                 const map = {
-                    toggleTimer:    () => this.toggleTimer(),
-                    nextLevel:      () => this.nextLevel(),
-                    prevLevel:      () => this.prevLevel(),
-                    addTwoMinutes:  () => this.addTwoMinutes(),
-                    toggleExtend:   () => this.toggleExtend(),
-                    eliminatePlayer:() => this.eliminatePlayer(),
-                    addPlayer:      () => this.addPlayer(),
-                    addRebuy:       () => this.addRebuy(),
-                    undoRebuy:      () => this.undoRebuy(),
+                    toggleTimer:       () => this.toggleTimer(),
+                    nextLevel:         () => this.nextLevel(),
+                    prevLevel:         () => this.prevLevel(),
+                    addTwoMinutes:     () => this.addTwoMinutes(),
+                    toggleExtend:      () => this.toggleExtend(),
+                    eliminatePlayer:   () => this.eliminatePlayer(),
+                    addPlayer:         () => this.addPlayer(),
+                    addRebuy:          () => this.addRebuy(),
+                    undoRebuy:         () => this.undoRebuy(),
                 };
                 if (map[cmd]) {
                     map[cmd]();
@@ -1495,6 +1629,9 @@ this.blindLevels = [
 
             // Called by remote to do a full re-render of the remote UI
             renderRemoteUpdate() {
+                // Don't replace the DOM while the user is typing the late-reg name —
+                // the timer tick fires every second and would reset their text input.
+                if (this.remoteFlow === 'lateReg' && !this.remoteLateRegPending) return;
                 document.getElementById('app').innerHTML = this.renderRemote();
             }
 
@@ -1502,103 +1639,670 @@ this.blindLevels = [
                 const s = this.remoteState;
                 const connected = this.ablyConnected;
 
-                const connHTML = `
-                    <div class="remote-conn">
-                        <div class="remote-conn-dot ${connected ? 'live' : 'waiting'}"></div>
-                        ${connected ? (s ? 'Live' : 'Waiting…') : 'Connecting…'}
-                    </div>`;
+                // ── Route to sub-screens ──────────────────────────────────
+                if (this.remoteFlow === 'eliminate') {
+                    return this.renderRemoteEliminateSetup(s, connected);
+                }
+                if (this.remoteFlow === 'lateReg') {
+                    // Show result once we get confirmation back from host
+                    if (this.remoteLateRegPending && s && s.lateRegDraw) {
+                        return this.renderRemoteLateRegResult(s, connected);
+                    }
+                    return this.renderRemoteLateRegSetup(s, connected);
+                }
+                if (this.remoteFlow === 'redraw') {
+                    if (this.remoteRedrawPending && s && s.redrawResult) {
+                        return this.renderRemoteRedrawResult(s, connected);
+                    }
+                    return this.renderRemoteRedrawSetup(s, connected);
+                }
 
-                let stateHTML = '';
+                const isRunning  = s ? s.isRunning   : false;
+                const isOnBreak  = s ? s.isOnBreak   : false;
+                const rebuysOpen = s ? s.areRebuysOpen : false;
+
+                // ── status bar ──────────────────────────────────────────
+                let statusBar = '';
                 if (s) {
-                    const timeStr = s.isOnBreak ? this.formatTime(s.breakTimeLeft) :
-                                    s.isExtended ? 'EXT' : this.formatTime(s.timeLeft);
-                    const breakColor = s.isOnBreak ? 'break-color' : '';
-                    stateHTML = `
-                        <div class="remote-state-bar">
-                            <div class="remote-state-row">
-                                <div class="remote-time-display ${breakColor}">${timeStr}</div>
-                                <div class="remote-level-display">
-                                    ${s.isOnBreak ? '<strong>BREAK</strong>' : `L<strong>${s.levelNum}</strong> &nbsp;${this.formatNumber(s.small)}/${this.formatNumber(s.big)}`}
-                                </div>
-                                <div class="remote-players-display">${s.playersRemaining}/${s.totalPlayers} players</div>
-                            </div>
+                    const timeStr = s.isOnBreak ? this.formatTime(s.breakTimeLeft)
+                                  : s.isExtended ? 'EXT'
+                                  : this.formatTime(s.timeLeft);
+                    const levelStr = s.isOnBreak ? 'BREAK'
+                                   : `L${s.levelNum} · ${this.formatNumber(s.small)} / ${this.formatNumber(s.big)}`;
+                    statusBar = `
+                        <div style="display:flex;align-items:center;justify-content:space-between;
+                                    padding:0.75rem 1.25rem;background:#0a0a0a;border-bottom:2px solid #1a1a1a;
+                                    font-family:var(--font-mono);flex-shrink:0;">
+                            <span style="font-size:1.5rem;font-weight:800;letter-spacing:-0.03em;
+                                         color:${s.isOnBreak ? '#f59e0b' : '#fff'};">${timeStr}</span>
+                            <span style="font-size:0.85rem;color:#888;">${levelStr}</span>
+                            <span style="font-size:0.85rem;color:#888;">${s.playersRemaining}/${s.totalPlayers}</span>
                         </div>`;
                 } else {
-                    stateHTML = `
-                        <div class="remote-waiting">
-                            <div>Waiting for the host to start…</div>
-                            <div style="margin-top:0.5rem;font-size:0.75rem;">Make sure the app is open on the MacBook</div>
+                    statusBar = `
+                        <div style="padding:2rem;text-align:center;color:#555;flex-shrink:0;border-bottom:2px solid #111;">
+                            <div style="font-size:1rem;">Waiting for host…</div>
+                            <div style="font-size:0.8rem;margin-top:0.4rem;color:#333;">Open the app on the MacBook first</div>
                         </div>`;
                 }
 
-                const rebuysOpen = s ? s.areRebuysOpen : false;
-                const isRunning = s ? s.isRunning : false;
-                const isOnBreak = s ? s.isOnBreak : false;
-                const isExtended = s ? s.isExtended : false;
+                // ── helper to build one cell ─────────────────────────────
+                const cell = (label, onclick, opts = {}) => {
+                    const { color = '#fff', bg = '#000', dimmed = false, span = false } = opts;
+                    const opacity = dimmed ? '0.2' : '1';
+                    const spanStyle = span ? 'grid-column:1 / -1;' : '';
+                    return `
+                        <button
+                            ${dimmed ? 'disabled' : ''}
+                            onclick="${onclick}"
+                            style="${spanStyle}background:${bg};color:${color};opacity:${opacity};
+                                   border:none;min-height:0;
+                                   display:flex;align-items:center;justify-content:center;
+                                   font-family:var(--font-ui);font-size:1.4rem;font-weight:700;
+                                   text-transform:uppercase;letter-spacing:0.03em;
+                                   cursor:pointer;-webkit-tap-highlight-color:transparent;
+                                   touch-action:manipulation;-webkit-user-select:none;
+                                   transition:filter 0.1s, opacity 0.1s;">
+                            ${label}
+                        </button>`;
+                };
 
-                const controlsHTML = s ? `
-                    <div class="remote-controls">
-                        <div class="remote-play-row">
-                            <button class="remote-play-btn ${isRunning ? 'running' : ''}" onclick="app.sendCommand('toggleTimer')">
-                                ${isRunning
-                                    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`
-                                    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5,3 19,12 5,21"></polygon></svg>`
-                                }
-                            </button>
-                        </div>
+                const hasPlayers = s && s.originalPlayerNames && s.originalPlayerNames.length > 0;
 
-                        <div class="remote-row">
-                            <button class="remote-btn" onclick="app.sendCommand('prevLevel')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="19,20 9,12 19,4"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
-                                <span class="remote-btn-label">Prev Level</span>
-                            </button>
-                            <button class="remote-btn" onclick="app.sendCommand('nextLevel')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5,4 15,12 5,20"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
-                                <span class="remote-btn-label">Next Level</span>
-                            </button>
-                            <button class="remote-btn" ${isOnBreak ? 'disabled' : ''} onclick="app.sendCommand('addTwoMinutes')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12,6 12,12 16,14"></polyline></svg>
-                                <span class="remote-btn-label">+2 Min</span>
-                            </button>
-                            <button class="remote-btn ${isExtended ? 'warn' : ''}" ${isOnBreak ? 'disabled' : ''} onclick="app.sendCommand('toggleExtend')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-14 9V3z"></path><line x1="19" y1="3" x2="19" y2="21"></line></svg>
-                                <span class="remote-btn-label">${isExtended ? 'Extended' : 'Extend'}</span>
-                            </button>
-                        </div>
+                // ── grid (only when host state is known) ─────────────────
+                const grid = s ? `
+                    <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;
+                                grid-template-rows:repeat(6,1fr);gap:3px;background:#1a1a1a;min-height:0;">
 
-                        <div class="remote-row">
-                            <button class="remote-btn danger" onclick="app.sendCommand('eliminatePlayer')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                                <span class="remote-btn-label">Out</span>
-                            </button>
-                            <button class="remote-btn" onclick="app.sendCommand('addPlayer')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
-                                <span class="remote-btn-label">Undo Out</span>
-                            </button>
-                            ${rebuysOpen ? `
-                            <button class="remote-btn success" onclick="app.sendCommand('addRebuy')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                                <span class="remote-btn-label">Rebuy</span>
-                            </button>
-                            <button class="remote-btn" onclick="app.sendCommand('undoRebuy')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
-                                <span class="remote-btn-label">Undo Rebuy</span>
-                            </button>` : ''}
-                        </div>
+                        ${cell('▶&nbsp; Play',  "app.sendCommand('toggleTimer')", { color:'#10b981', bg:'#061a0e', dimmed: isRunning })}
+                        ${cell('⏸&nbsp; Pause', "app.sendCommand('toggleTimer')", { color:'#f59e0b', bg:'#1a1100', dimmed: !isRunning })}
+
+                        ${cell('← Prev Level', "app.sendCommand('prevLevel')", { color:'#ccc', bg:'#0a0a0a' })}
+                        ${cell('Next Level →', "app.sendCommand('nextLevel')", { color:'#ccc', bg:'#0a0a0a' })}
+
+                        ${cell('Player Out', 'app.remoteStartEliminate()', { color:'#ef4444', bg:'#160404' })}
+                        ${cell('Undo Out',
+                               s.lastEliminatedName ? 'app.remoteUndoEliminate()' : '',
+                               { color:'#888', bg:'#0a0a0a', dimmed: !s.lastEliminatedName })}
+
+                        ${cell('Rebuy',  "app.sendCommand('addRebuy')",  { color:'#10b981', bg:'#061a0e', dimmed: !rebuysOpen })}
+                        ${cell('Cancel', "app.sendCommand('undoRebuy')", { color:'#888',    bg:'#0a0a0a', dimmed: !rebuysOpen })}
+
+                        ${cell('+2 Min',   "app.sendCommand('addTwoMinutes')", { color:'#ccc',    bg:'#0a0a0a' })}
+                        ${cell('Late Reg', 'app.remoteStartLateReg()',         { color:'#3b82f6', bg:'#04101f' })}
+
+                        ${cell('Redraw Seats', hasPlayers ? 'app.remoteStartRedraw()' : '',
+                               { color: hasPlayers ? '#fff' : '#444', bg:'#111', span: true, dimmed: !hasPlayers })}
+
                     </div>` : '';
 
+                // ── connection dot ────────────────────────────────────────
+                const dot = `<div class="remote-conn-dot ${connected ? 'live' : 'waiting'}" style="width:8px;height:8px;"></div>`;
+
                 return `
-                    <div class="remote-layout">
-                        <div class="remote-header">
-                            <div class="remote-title">Risithai Poker Tour</div>
-                            ${connHTML}
+                    <div style="display:flex;flex-direction:column;height:100vh;background:#000;
+                                color:#fff;font-family:var(--font-ui);overflow:hidden;
+                                padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);">
+
+                        <div style="display:flex;align-items:center;justify-content:space-between;
+                                    padding:0.6rem 1rem;border-bottom:1px solid #111;flex-shrink:0;">
+                            <span style="font-size:0.65rem;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;">
+                                Risithai Poker Tour
+                            </span>
+                            <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.65rem;color:#666;">
+                                ${dot} ${connected ? (s ? 'Live' : 'Waiting…') : 'Connecting…'}
+                            </div>
                         </div>
-                        ${stateHTML}
-                        ${controlsHTML}
+
+                        ${statusBar}
+                        ${grid}
+                    </div>`;
+            }
+
+            // ── Remote: Late Reg flow ─────────────────────────────────────
+
+            remoteStartLateReg() {
+                const s = this.remoteState;
+                if (!s) return;
+                // Seed counts from last published state or even split
+                const tc = s.tableCount || 1;
+                const keys = ['pokerTable', 'kitchenTable', 'poolTable'].slice(0, tc);
+                if (s.lateRegTableCounts && Object.keys(s.lateRegTableCounts).length > 0) {
+                    this.remoteLateRegCounts = {...s.lateRegTableCounts};
+                } else {
+                    const base = Math.floor(s.playersRemaining / tc);
+                    const extra = s.playersRemaining % tc;
+                    this.remoteLateRegCounts = {};
+                    keys.forEach((k, i) => { this.remoteLateRegCounts[k] = base + (i < extra ? 1 : 0); });
+                }
+                this.remoteLateRegName = '';
+                this.remoteLateRegPending = false;
+                this.remoteFlow = 'lateReg';
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            remoteAdjustLateRegCount(key, delta) {
+                this.remoteLateRegCounts[key] = Math.max(0, (this.remoteLateRegCounts[key] || 0) + delta);
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            remoteSetLateRegName(value) {
+                this.remoteLateRegName = value; // keep raw; don't re-render (preserves caret)
+            }
+
+            remoteConfirmLateReg() {
+                this.remoteLateRegName = (document.getElementById('remote-late-reg-name') || {value: this.remoteLateRegName}).value.trim();
+                if (!this.remoteLateRegName) return;
+                this.remoteLateRegPending = true;
+                this.sendCommand({ type: 'confirmLateReg', name: this.remoteLateRegName, tableCounts: {...this.remoteLateRegCounts} });
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            remoteDoneLateReg() {
+                this.sendCommand({ type: 'closeLateReg' });
+                this.remoteFlow = null;
+                this.remoteLateRegPending = false;
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            remoteCancelLateReg() {
+                this.remoteFlow = null;
+                this.remoteLateRegPending = false;
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            renderRemoteLateRegSetup(s, connected) {
+                const dot = `<div class="remote-conn-dot ${connected ? 'live' : 'waiting'}" style="width:8px;height:8px;"></div>`;
+                const tc = s ? (s.tableCount || 1) : 1;
+                const keys = ['pokerTable', 'kitchenTable', 'poolTable'].slice(0, tc);
+                const tableNames = { pokerTable: 'Poker Table', kitchenTable: 'Kitchen Table', poolTable: 'Pool Table' };
+                const expected = s ? s.playersRemaining : 0;
+                const total = keys.reduce((sum, k) => sum + (this.remoteLateRegCounts[k] || 0), 0);
+                const totalOk = total === expected;
+                const nameOk = this.remoteLateRegName.trim().length > 0;
+                const canAssign = totalOk && nameOk && !this.remoteLateRegPending;
+
+                const pending = this.remoteLateRegPending;
+
+                return `
+                    <div style="display:flex;flex-direction:column;height:100vh;background:#000;color:#fff;
+                                font-family:var(--font-ui);overflow:hidden;
+                                padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);">
+
+                        <!-- top strip -->
+                        <div style="display:flex;align-items:center;justify-content:space-between;
+                                    padding:0.6rem 1rem;border-bottom:1px solid #111;flex-shrink:0;">
+                            <button onclick="app.remoteCancelLateReg()"
+                                    style="background:none;border:none;color:#666;font-size:0.75rem;
+                                           font-family:var(--font-ui);cursor:pointer;padding:0.25rem 0.5rem;">
+                                ← Back
+                            </button>
+                            <span style="font-size:0.65rem;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;">
+                                Late Registration
+                            </span>
+                            <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.65rem;color:#666;">
+                                ${dot}
+                            </div>
+                        </div>
+
+                        <!-- scrollable form -->
+                        <div style="flex:1;overflow-y:auto;padding:1.5rem 1.25rem;display:flex;flex-direction:column;gap:1.5rem;">
+
+                            <!-- name input -->
+                            <div>
+                                <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.15em;color:#666;margin-bottom:0.6rem;">
+                                    Player Name
+                                </div>
+                                <input
+                                    id="remote-late-reg-name"
+                                    type="text"
+                                    placeholder="Enter name…"
+                                    value="${this.remoteLateRegName.replace(/"/g, '&quot;')}"
+                                    oninput="app.remoteSetLateRegName(this.value)"
+                                    autocomplete="off"
+                                    ${pending ? 'disabled' : ''}
+                                    style="-webkit-user-select:text;user-select:text;
+                                           width:100%;background:#111;border:1px solid #333;border-radius:0.5rem;
+                                           color:#fff;font-size:1.3rem;font-family:var(--font-ui);
+                                           padding:0.85rem 1rem;outline:none;
+                                           -webkit-appearance:none;"
+                                >
+                            </div>
+
+                            <!-- table count adjusters -->
+                            <div>
+                                <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.15em;color:#666;margin-bottom:0.75rem;">
+                                    Players currently at each table
+                                </div>
+                                <div style="display:flex;flex-direction:column;gap:0.75rem;">
+                                    ${keys.map(key => `
+                                        <div style="display:flex;align-items:center;justify-content:space-between;
+                                                    background:#111;border-radius:0.5rem;padding:0.85rem 1rem;border:1px solid #1e1e1e;">
+                                            <span style="font-size:1rem;font-weight:500;">${tableNames[key]}</span>
+                                            <div style="display:flex;align-items:center;gap:0;">
+                                                <button onclick="app.remoteAdjustLateRegCount('${key}', -1)"
+                                                        ${pending ? 'disabled' : ''}
+                                                        style="width:2.5rem;height:2.5rem;background:#222;border:none;border-radius:0.375rem;
+                                                               color:#fff;font-size:1.4rem;cursor:pointer;
+                                                               display:flex;align-items:center;justify-content:center;
+                                                               -webkit-tap-highlight-color:transparent;touch-action:manipulation;">−</button>
+                                                <span style="font-family:var(--font-mono);font-size:1.3rem;font-weight:700;
+                                                             min-width:2.5rem;text-align:center;">${this.remoteLateRegCounts[key] || 0}</span>
+                                                <button onclick="app.remoteAdjustLateRegCount('${key}', 1)"
+                                                        ${pending ? 'disabled' : ''}
+                                                        style="width:2.5rem;height:2.5rem;background:#222;border:none;border-radius:0.375rem;
+                                                               color:#fff;font-size:1.4rem;cursor:pointer;
+                                                               display:flex;align-items:center;justify-content:center;
+                                                               -webkit-tap-highlight-color:transparent;touch-action:manipulation;">+</button>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+
+                                <!-- total validation -->
+                                <div style="margin-top:0.75rem;text-align:center;font-size:0.85rem;
+                                            color:${totalOk ? '#666' : '#ef4444'};font-weight:${totalOk ? '400' : '600'};">
+                                    Total: ${total} / ${expected} players${totalOk ? ' ✓' : ' — adjust to match'}
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <!-- bottom action buttons -->
+                        <div style="padding:1rem 1.25rem;display:flex;flex-direction:column;gap:0.6rem;flex-shrink:0;
+                                    border-top:1px solid #111;">
+                            <button onclick="app.remoteConfirmLateReg()"
+                                    ${canAssign ? '' : 'disabled'}
+                                    style="width:100%;padding:1.1rem;border:none;border-radius:0.5rem;
+                                           background:${canAssign ? '#10b981' : '#1a2a22'};
+                                           color:${canAssign ? '#fff' : '#2a4a3a'};
+                                           font-size:1.2rem;font-weight:700;font-family:var(--font-ui);
+                                           text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;
+                                           -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+                                           transition:background 0.2s;">
+                                ${pending ? 'Assigning…' : 'Assign Table'}
+                            </button>
+                            <button onclick="app.remoteCancelLateReg()"
+                                    style="width:100%;padding:0.85rem;border:1px solid #222;border-radius:0.5rem;
+                                           background:transparent;color:#666;
+                                           font-size:1rem;font-family:var(--font-ui);cursor:pointer;
+                                           -webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>`;
+            }
+
+            renderRemoteLateRegResult(s, connected) {
+                const dot = `<div class="remote-conn-dot ${connected ? 'live' : 'waiting'}" style="width:8px;height:8px;"></div>`;
+                const { table, name } = s.lateRegDraw;
+
+                return `
+                    <div style="display:flex;flex-direction:column;height:100vh;background:#000;color:#fff;
+                                font-family:var(--font-ui);overflow:hidden;
+                                padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);">
+
+                        <!-- top strip -->
+                        <div style="display:flex;align-items:center;justify-content:space-between;
+                                    padding:0.6rem 1rem;border-bottom:1px solid #111;flex-shrink:0;">
+                            <span style="font-size:0.65rem;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;">
+                                Late Registration
+                            </span>
+                            <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.65rem;color:#666;">
+                                ${dot}
+                            </div>
+                        </div>
+
+                        <!-- result -->
+                        <div style="flex:1;display:flex;flex-direction:column;align-items:center;
+                                    justify-content:center;padding:2rem;text-align:center;gap:1rem;">
+                            <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.2em;color:#10b981;">
+                                Table Assigned
+                            </div>
+                            <div style="font-size:2.2rem;font-weight:700;line-height:1.15;">${name}</div>
+                            <div style="font-size:3rem;font-family:var(--font-mono);font-weight:800;
+                                        color:#3b82f6;line-height:1.1;">
+                                ${table}
+                            </div>
+                            <div style="font-size:0.9rem;color:#666;margin-top:0.5rem;">
+                                Enter as Big Blind on the next hand
+                            </div>
+                            <div style="font-size:0.75rem;color:#444;margin-top:0.25rem;">
+                                ${s.playersRemaining} players
+                            </div>
+                        </div>
+
+                        <!-- done button -->
+                        <div style="padding:1.5rem 1.25rem;flex-shrink:0;border-top:1px solid #111;">
+                            <button onclick="app.remoteDoneLateReg()"
+                                    style="width:100%;padding:1.2rem;border:none;border-radius:0.5rem;
+                                           background:#3b82f6;color:#fff;
+                                           font-size:1.2rem;font-weight:700;font-family:var(--font-ui);
+                                           text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;
+                                           -webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+                                Done
+                            </button>
+                        </div>
+                    </div>`;
+            }
+
+            // ── Remote: Eliminate flow ────────────────────────────────────
+
+            remoteStartEliminate() {
+                const s = this.remoteState;
+                if (!s) return;
+                // If we have named players, show the picker; otherwise send anonymous decrement
+                if (s.activePlayers && s.activePlayers.length > 0) {
+                    this.remoteFlow = 'eliminate';
+                    document.getElementById('app').innerHTML = this.renderRemote();
+                } else {
+                    // Anonymous fallback
+                    this.sendCommand({ type: 'confirmEliminate', name: null });
+                }
+            }
+
+            remoteConfirmEliminate(name) {
+                this.sendCommand({ type: 'confirmEliminate', name });
+                this.remoteFlow = null;
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            remoteCancelEliminate() {
+                this.remoteFlow = null;
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            remoteUndoEliminate() {
+                this.sendCommand({ type: 'undoEliminate' });
+            }
+
+            renderRemoteEliminateSetup(s, connected) {
+                const dot = `<div class="remote-conn-dot ${connected ? 'live' : 'waiting'}" style="width:8px;height:8px;"></div>`;
+                const players = s ? (s.activePlayers || []) : [];
+
+                return `
+                    <div style="display:flex;flex-direction:column;height:100vh;background:#000;color:#fff;
+                                font-family:var(--font-ui);overflow:hidden;
+                                padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);">
+
+                        <!-- top strip -->
+                        <div style="display:flex;align-items:center;justify-content:space-between;
+                                    padding:0.6rem 1rem;border-bottom:1px solid #111;flex-shrink:0;">
+                            <button onclick="app.remoteCancelEliminate()"
+                                    style="background:none;border:none;color:#666;font-size:0.75rem;
+                                           font-family:var(--font-ui);cursor:pointer;padding:0.25rem 0.5rem;">
+                                ← Back
+                            </button>
+                            <span style="font-size:0.65rem;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;">
+                                Player Out
+                            </span>
+                            <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.65rem;color:#666;">
+                                ${dot}
+                            </div>
+                        </div>
+
+                        <!-- subtitle -->
+                        <div style="padding:0.75rem 1.25rem;background:#0a0a0a;border-bottom:1px solid #111;
+                                    font-size:0.75rem;color:#666;flex-shrink:0;">
+                            Who got knocked out?
+                        </div>
+
+                        <!-- scrollable player list -->
+                        <div style="flex:1;overflow-y:auto;">
+                            ${players.map(name => `
+                                <button onclick="app.remoteConfirmEliminate('${name.replace(/'/g, "\\'")}')"
+                                        style="width:100%;padding:1.2rem 1.5rem;background:transparent;
+                                               border:none;border-bottom:1px solid #0f0f0f;
+                                               color:#ef4444;font-size:1.1rem;font-weight:600;
+                                               font-family:var(--font-ui);text-align:left;cursor:pointer;
+                                               -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+                                               display:block;">
+                                    ${name}
+                                </button>
+                            `).join('')}
+                        </div>
+
+                        <!-- cancel -->
+                        <div style="padding:1rem 1.25rem;flex-shrink:0;border-top:1px solid #111;">
+                            <button onclick="app.remoteCancelEliminate()"
+                                    style="width:100%;padding:0.85rem;border:1px solid #222;border-radius:0.5rem;
+                                           background:transparent;color:#666;
+                                           font-size:1rem;font-family:var(--font-ui);cursor:pointer;
+                                           -webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>`;
+            }
+
+            // ── Remote: Redraw flow ───────────────────────────────────────
+
+            remoteStartRedraw() {
+                const s = this.remoteState;
+                if (!s) return;
+                // Use activePlayers if available, else fall back to originalPlayerNames
+                const pool = (s.activePlayers && s.activePlayers.length > 0)
+                    ? s.activePlayers
+                    : (s.originalPlayerNames || []);
+                if (pool.length === 0) return;
+                this.remoteRedrawPool = [...pool];
+                // Pre-select all when using activePlayers (we know who's in)
+                const preSelect = s.activePlayers && s.activePlayers.length > 0;
+                this.remoteRedrawSelections = this.remoteRedrawPool.map(() => preSelect);
+                this.remoteRedrawTableCount = s.tableCount || 1;
+                this.remoteRedrawPending = false;
+                this.remoteFlow = 'redraw';
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            remoteToggleRedrawPlayer(index) {
+                this.remoteRedrawSelections[index] = !this.remoteRedrawSelections[index];
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            remoteSetRedrawTableCount(count) {
+                this.remoteRedrawTableCount = count;
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            remoteConfirmRedraw() {
+                const s = this.remoteState;
+                if (!s) return;
+                const selectedPlayers = this.remoteRedrawPool.filter((_, i) => this.remoteRedrawSelections[i]);
+                if (selectedPlayers.length < 2) return;
+                this.remoteRedrawPending = true;
+                this.sendCommand({ type: 'performRedraw', players: selectedPlayers, tableCount: this.remoteRedrawTableCount });
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            remoteDoneRedraw() {
+                this.sendCommand({ type: 'closeRedraw' });
+                this.remoteFlow = null;
+                this.remoteRedrawPending = false;
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            remoteCancelRedraw() {
+                this.remoteFlow = null;
+                this.remoteRedrawPending = false;
+                document.getElementById('app').innerHTML = this.renderRemote();
+            }
+
+            renderRemoteRedrawSetup(s, connected) {
+                const dot = `<div class="remote-conn-dot ${connected ? 'live' : 'waiting'}" style="width:8px;height:8px;"></div>`;
+                const names = this.remoteRedrawPool.length > 0 ? this.remoteRedrawPool : (s ? (s.originalPlayerNames || []) : []);
+                const playersRemaining = s ? s.playersRemaining : 0;
+                const selectedCount = this.remoteRedrawSelections.filter(Boolean).length;
+                const canRedraw = selectedCount === playersRemaining && !this.remoteRedrawPending;
+                const pending = this.remoteRedrawPending;
+
+                const tabBtn = (label, count) => {
+                    const active = this.remoteRedrawTableCount === count;
+                    return `<button onclick="app.remoteSetRedrawTableCount(${count})"
+                                    style="flex:1;padding:0.7rem 0;border:none;border-radius:0.375rem;cursor:pointer;
+                                           background:${active ? '#3b82f6' : '#1a1a1a'};
+                                           color:${active ? '#fff' : '#666'};
+                                           font-size:0.95rem;font-weight:600;font-family:var(--font-ui);
+                                           -webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+                                ${label}
+                            </button>`;
+                };
+
+                return `
+                    <div style="display:flex;flex-direction:column;height:100vh;background:#000;color:#fff;
+                                font-family:var(--font-ui);overflow:hidden;
+                                padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);">
+
+                        <!-- top strip -->
+                        <div style="display:flex;align-items:center;justify-content:space-between;
+                                    padding:0.6rem 1rem;border-bottom:1px solid #111;flex-shrink:0;">
+                            <button onclick="app.remoteCancelRedraw()"
+                                    style="background:none;border:none;color:#666;font-size:0.75rem;
+                                           font-family:var(--font-ui);cursor:pointer;padding:0.25rem 0.5rem;">
+                                ← Back
+                            </button>
+                            <span style="font-size:0.65rem;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;">
+                                Redraw Seats
+                            </span>
+                            <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.65rem;color:#666;">
+                                ${dot}
+                            </div>
+                        </div>
+
+                        <!-- table count toggle -->
+                        <div style="padding:0.85rem 1.25rem;border-bottom:1px solid #111;flex-shrink:0;">
+                            <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.15em;color:#666;margin-bottom:0.5rem;">
+                                Draw to
+                            </div>
+                            <div style="display:flex;gap:0.4rem;">
+                                ${tabBtn('1 Table', 1)}
+                                ${tabBtn('2 Tables', 2)}
+                            </div>
+                        </div>
+
+                        <!-- player list header -->
+                        <div style="padding:0.6rem 1.25rem;background:#0a0a0a;border-bottom:1px solid #111;flex-shrink:0;">
+                            <div style="font-size:0.75rem;color:#666;">
+                                Select players still in — <span style="color:${selectedCount === playersRemaining ? '#10b981' : '#fff'};font-weight:600;">${selectedCount} / ${playersRemaining} selected</span>
+                            </div>
+                        </div>
+
+                        <!-- scrollable player list -->
+                        <div style="flex:1;overflow-y:auto;">
+                            ${names.map((name, i) => {
+                                const sel = this.remoteRedrawSelections[i];
+                                return `
+                                    <div onclick="app.remoteToggleRedrawPlayer(${i})"
+                                         style="display:flex;align-items:center;gap:1rem;
+                                                padding:1rem 1.25rem;border-bottom:1px solid #0f0f0f;
+                                                background:${sel ? 'rgba(16,185,129,0.07)' : 'transparent'};
+                                                cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+                                        <div style="width:1.5rem;height:1.5rem;border-radius:0.25rem;flex-shrink:0;
+                                                    border:2px solid ${sel ? '#10b981' : '#333'};
+                                                    background:${sel ? '#10b981' : 'transparent'};
+                                                    display:flex;align-items:center;justify-content:center;">
+                                            ${sel ? '<span style="color:#000;font-size:0.85rem;font-weight:800;">✓</span>' : ''}
+                                        </div>
+                                        <span style="font-size:1.05rem;font-weight:500;
+                                                     color:${sel ? '#fff' : '#777'};">${name}</span>
+                                    </div>`;
+                            }).join('')}
+                        </div>
+
+                        <!-- bottom actions -->
+                        <div style="padding:1rem 1.25rem;display:flex;flex-direction:column;gap:0.6rem;flex-shrink:0;
+                                    border-top:1px solid #111;">
+                            ${!canRedraw && selectedCount > 0 && !pending ? `
+                                <div style="text-align:center;font-size:0.8rem;color:#ef4444;">
+                                    Select exactly ${playersRemaining} players to match remaining count
+                                </div>` : ''}
+                            <button onclick="app.remoteConfirmRedraw()"
+                                    ${canRedraw ? '' : 'disabled'}
+                                    style="width:100%;padding:1.1rem;border:none;border-radius:0.5rem;
+                                           background:${canRedraw ? '#3b82f6' : '#0d1a2a'};
+                                           color:${canRedraw ? '#fff' : '#1a3a5a'};
+                                           font-size:1.2rem;font-weight:700;font-family:var(--font-ui);
+                                           text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;
+                                           -webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+                                ${pending ? 'Drawing…' : (this.remoteRedrawTableCount === 1 ? 'Draw Final Table' : 'Redraw Tables')}
+                            </button>
+                            <button onclick="app.remoteCancelRedraw()"
+                                    style="width:100%;padding:0.85rem;border:1px solid #222;border-radius:0.5rem;
+                                           background:transparent;color:#666;
+                                           font-size:1rem;font-family:var(--font-ui);cursor:pointer;
+                                           -webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>`;
+            }
+
+            renderRemoteRedrawResult(s, connected) {
+                const dot = `<div class="remote-conn-dot ${connected ? 'live' : 'waiting'}" style="width:8px;height:8px;"></div>`;
+                const result = s.redrawResult || [];
+                const title = result.length === 1 ? 'Final Table' : 'Table Redraw';
+
+                return `
+                    <div style="display:flex;flex-direction:column;height:100vh;background:#000;color:#fff;
+                                font-family:var(--font-ui);overflow:hidden;
+                                padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);">
+
+                        <!-- top strip -->
+                        <div style="display:flex;align-items:center;justify-content:space-between;
+                                    padding:0.6rem 1rem;border-bottom:1px solid #111;flex-shrink:0;">
+                            <span style="font-size:0.65rem;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;">
+                                ${title}
+                            </span>
+                            <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.65rem;color:#666;">
+                                ${dot}
+                            </div>
+                        </div>
+
+                        <!-- scrollable table assignments -->
+                        <div style="flex:1;overflow-y:auto;padding:1.25rem;">
+                            ${result.map(table => `
+                                <div style="margin-bottom:1.5rem;">
+                                    <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.2em;color:#3b82f6;margin-bottom:0.75rem;">
+                                        ${table.name}
+                                    </div>
+                                    ${table.players.map((player, idx) => `
+                                        <div style="display:flex;align-items:center;gap:0.75rem;
+                                                    padding:0.85rem 0.75rem;border-bottom:1px solid #0f0f0f;">
+                                            <span style="font-family:var(--font-mono);font-size:0.8rem;color:#444;
+                                                         min-width:1.5rem;">${idx + 1}</span>
+                                            <span style="font-size:1rem;font-weight:500;">${player}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            `).join('')}
+                        </div>
+
+                        <!-- done button -->
+                        <div style="padding:1.5rem 1.25rem;flex-shrink:0;border-top:1px solid #111;">
+                            <button onclick="app.remoteDoneRedraw()"
+                                    style="width:100%;padding:1.2rem;border:none;border-radius:0.5rem;
+                                           background:#3b82f6;color:#fff;
+                                           font-size:1.2rem;font-weight:700;font-family:var(--font-ui);
+                                           text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;
+                                           -webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+                                Done
+                            </button>
+                        </div>
                     </div>`;
             }
 
             // ===== END ABLY =====
+
+            // Derive lateRegTableCounts from who is currently at each table
+            recomputeTableCounts() {
+                if (Object.keys(this.playerTableMap).length === 0) return;
+                const counts = {};
+                for (const name of this.activePlayers) {
+                    const t = this.playerTableMap[name];
+                    if (t) counts[t] = (counts[t] || 0) + 1;
+                }
+                this.lateRegTableCounts = counts;
+            }
 
             initAudioContext() {
                 if (!this.audioContextInitialized) {
@@ -1772,6 +2476,8 @@ this.blindLevels = [
                     content = this.renderGame() + this.renderWarning();
                 } else if (this.showLateReg) {
                     content = this.renderGame() + this.renderLateRegModal();
+                } else if (this.showEliminateModal) {
+                    content = this.renderGame() + this.renderEliminateModal();
                 } else {
                     content = this.renderGame();
                 }
@@ -2448,7 +3154,8 @@ this.blindLevels = [
                                     class="btn btn-secondary" title="Eliminate Player (BACKSPACE)">
                                     ${icons.Minus} OUT
                                 </button>
-                                <button onclick="app.addPlayer()" ${this.playersRemaining >= this.setupData.totalPlayers ? 'disabled' : ''}
+                                <button onclick="app.addPlayer()"
+                                    ${(this.activePlayers.length > 0 ? !this.lastEliminated : this.playersRemaining >= this.setupData.totalPlayers) ? 'disabled' : ''}
                                     class="btn btn-icon" title="Undo elimination">
                                     ${icons.RotateCcw}
                                 </button>
@@ -2488,7 +3195,7 @@ this.blindLevels = [
                                     ${this.isFullscreen ? icons.Minimize : icons.Maximize}
                                 </button>
                                 
-                                <button onclick="app.showRedrawSeating()" class="btn btn-secondary" title="Redraw Table Seating" ${this.originalPlayerNames.length === 0 ? 'disabled' : ''}>
+                                <button onclick="app.showRedrawSeating()" class="btn btn-secondary" title="Redraw Table Seating" ${this.activePlayers.length === 0 && this.originalPlayerNames.length === 0 ? 'disabled' : ''}>
                                     ${icons.Shuffle} Redraw
                                 </button>
                                 
@@ -2506,6 +3213,8 @@ this.blindLevels = [
                     return this.renderRedrawResult();
                 }
 
+                const pool = this.getRedrawPool();
+                const usingActive = this.activePlayers.length > 0;
                 const selectedCount = this.redrawSelections.filter(s => s).length;
                 const canRedraw = selectedCount === this.playersRemaining;
 
@@ -2514,7 +3223,7 @@ this.blindLevels = [
                         <div class="setup-content">
                             <div class="setup-header">
                                 <h1 class="setup-title">${this.redrawTableCount === 1 ? 'FINAL TABLE DRAW' : 'TABLE REDRAW'}</h1>
-                                <p class="setup-subtitle">Select players still in the tournament</p>
+                                <p class="setup-subtitle">${usingActive ? 'All remaining players are pre-selected' : 'Select players still in the tournament'}</p>
                             </div>
 
                             <div class="setup-card">
@@ -2541,10 +3250,10 @@ this.blindLevels = [
                                         Players (${selectedCount} selected, ${this.playersRemaining} remaining)
                                     </label>
                                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                                        ${this.originalPlayerNames.map((name, index) => `
+                                        ${pool.map((name, index) => `
                                             <div style="display: flex; align-items: center; gap: 0.75rem; background: ${this.redrawSelections[index] ? 'rgba(16, 185, 129, 0.1)' : 'rgba(0, 0, 0, 0.3)'}; border-radius: 0.375rem; padding: 0.75rem; border: 1px solid ${this.redrawSelections[index] ? 'rgba(16, 185, 129, 0.3)' : '#333'}; cursor: pointer; transition: all 0.2s;" onclick="app.togglePlayerForRedraw(${index})">
-                                                <input 
-                                                    type="checkbox" 
+                                                <input
+                                                    type="checkbox"
                                                     ${this.redrawSelections[index] ? 'checked' : ''}
                                                     style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--success-color);"
                                                     onclick="event.stopPropagation(); app.togglePlayerForRedraw(${index})"
@@ -2673,8 +3382,11 @@ this.blindLevels = [
             // ===== LATE REGISTRATION =====
 
             lateRegPlayer() {
-                // Open the modal in setup step — seed counts from last known state or even split
-                if (Object.keys(this.lateRegTableCounts).length === 0) {
+                // Seed counts: if playerTableMap is populated, derive from actual current seating;
+                // otherwise fall back to an even split
+                if (Object.keys(this.playerTableMap).length > 0) {
+                    this.recomputeTableCounts();
+                } else if (Object.keys(this.lateRegTableCounts).length === 0) {
                     const base = Math.floor(this.playersRemaining / this.tableCount);
                     const extra = this.playersRemaining % this.tableCount;
                     if (this.tableCount >= 1) this.lateRegTableCounts.pokerTable   = base + (extra >= 1 ? 1 : 0);
@@ -2721,6 +3433,11 @@ this.blindLevels = [
                 const name = this.lateRegName || `Late Reg ${this.lateRegCount}`;
                 this.originalPlayerNames.push(name);
                 this.redrawSelections.push(false);
+                // Track in active players + table map if named mode is active
+                if (this.activePlayers.length > 0 || this.originalPlayerNames.length > 0) {
+                    this.activePlayers.push(name);
+                    this.playerTableMap[name] = chosenKey;
+                }
 
                 this.lateRegDraw = { table: tableNames[chosenKey], name };
                 this.lateRegStep = 'result';
@@ -2731,6 +3448,36 @@ this.blindLevels = [
                 this.showLateReg = false;
                 this.lateRegDraw = null;
                 this.render();
+            }
+
+            renderEliminateModal() {
+                return `
+                    <div class="modal-overlay">
+                        <div class="modal-content" style="min-width:280px;max-width:380px;">
+                            <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.15em;
+                                        color:var(--text-dim);text-align:center;margin-bottom:1.25rem;">
+                                Who got knocked out?
+                            </div>
+                            <div style="display:flex;flex-direction:column;gap:0.5rem;max-height:55vh;overflow-y:auto;margin-bottom:1rem;">
+                                ${this.activePlayers.map(name => `
+                                    <button onclick="app.confirmEliminate('${name.replace(/'/g, "\\'")}')"
+                                            style="width:100%;padding:0.85rem 1rem;background:#1a0404;
+                                                   border:1px solid #3a0808;border-radius:0.5rem;
+                                                   color:#ef4444;font-size:1rem;font-weight:600;
+                                                   font-family:var(--font-ui);text-align:left;cursor:pointer;
+                                                   transition:background 0.15s;-webkit-tap-highlight-color:transparent;"
+                                            onmouseover="this.style.background='#2a0606'"
+                                            onmouseout="this.style.background='#1a0404'">
+                                        ${name}
+                                    </button>
+                                `).join('')}
+                            </div>
+                            <button onclick="app.cancelEliminate()" class="btn btn-secondary"
+                                    style="width:100%;padding:0.6rem;">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>`;
             }
 
             renderLateRegModal() {
@@ -3306,13 +4053,28 @@ this.blindLevels = [
                 this.showPayouts = false;
                 this.showSeating = false;
                 this.showRedraw = false;
+                this.showEliminateModal = false;
+                this.lastEliminated = null;
                 this.redrawResult = null;
-                
+
                 if (this.tableAssignments) {
                     let all = [...this.tableAssignments.pokerTable];
                     if (this.tableAssignments.kitchenTable) all = all.concat(this.tableAssignments.kitchenTable);
                     if (this.tableAssignments.poolTable)    all = all.concat(this.tableAssignments.poolTable);
                     this.originalPlayerNames = all;
+                    // Build activePlayers + playerTableMap from initial seating
+                    this.activePlayers = [...all];
+                    this.playerTableMap = {};
+                    const tableKeys = ['pokerTable', 'kitchenTable', 'poolTable'];
+                    for (const key of tableKeys) {
+                        if (this.tableAssignments[key]) {
+                            for (const p of this.tableAssignments[key]) this.playerTableMap[p] = key;
+                        }
+                    }
+                } else {
+                    // No seating draw — anonymous mode
+                    this.activePlayers = [];
+                    this.playerTableMap = {};
                 }
                 this.userIsScrolling = false; // Allow auto-scroll when tournament starts
                 this.render();
@@ -3320,14 +4082,17 @@ this.blindLevels = [
             }
 
             showRedrawSeating() {
-                if (this.originalPlayerNames.length === 0) {
+                const pool = this.getRedrawPool();
+                if (pool.length === 0) {
                     alert('No player names available. Please set up seating first.');
                     return;
                 }
                 this.showRedraw = true;
                 this.redrawResult = null;
-                this.redrawTableCount = 1;
-                this.redrawSelections = this.originalPlayerNames.map(() => false);
+                this.redrawTableCount = this.tableCount; // default to current table count
+                // Pre-select all active players; if anonymous, start with none selected
+                const useActive = this.activePlayers.length > 0;
+                this.redrawSelections = pool.map(() => useActive);
                 this.render();
             }
 
@@ -3342,7 +4107,8 @@ this.blindLevels = [
             }
 
             performRedraw() {
-                const selectedPlayers = this.originalPlayerNames.filter((_, index) => this.redrawSelections[index]);
+                const pool = this.getRedrawPool();
+                const selectedPlayers = pool.filter((_, index) => this.redrawSelections[index]);
 
                 if (selectedPlayers.length < 2) {
                     alert('Please select at least 2 players for redraw.');
@@ -3361,8 +4127,21 @@ this.blindLevels = [
                             { name: 'Kitchen Table', players: shuffled.slice(count1) }
                         ];
                     }
+                    // Update playerTableMap with new seats
+                    const nameToKey = { 'Poker Table': 'pokerTable', 'Kitchen Table': 'kitchenTable', 'Pool Table': 'poolTable' };
+                    for (const t of this.redrawResult) {
+                        const key = nameToKey[t.name] || 'pokerTable';
+                        for (const p of t.players) this.playerTableMap[p] = key;
+                    }
+                    this.recomputeTableCounts();
                     this.render();
                 });
+            }
+
+            // Returns the pool of players to use for redraw:
+            // activePlayers (if named tracking is on) else originalPlayerNames
+            getRedrawPool() {
+                return this.activePlayers.length > 0 ? this.activePlayers : this.originalPlayerNames;
             }
 
             cancelRedraw() {
@@ -3406,19 +4185,54 @@ this.blindLevels = [
             }
 
             eliminatePlayer() {
-                if (this.playersRemaining > 1) {
+                if (this.playersRemaining <= 1) return;
+                if (this.activePlayers.length > 0) {
+                    // Named mode — show picker
+                    this.showEliminateModal = true;
+                    this.controlPanelOpen = false;
+                    this.render();
+                } else {
+                    // Anonymous mode — just decrement
                     this.playersRemaining--;
-                    if (this.playersRemaining === 1) {
-                        this.createConfetti();
-                    }
+                    if (this.playersRemaining === 1) this.createConfetti();
                     this.updateStats();
                 }
             }
 
+            confirmEliminate(name) {
+                this.lastEliminated = { name, table: this.playerTableMap[name] || null };
+                this.activePlayers = this.activePlayers.filter(p => p !== name);
+                delete this.playerTableMap[name];
+                this.playersRemaining = this.activePlayers.length;
+                if (this.playersRemaining === 1) this.createConfetti();
+                this.showEliminateModal = false;
+                this.recomputeTableCounts();
+                this.publishState();
+                this.render();
+            }
+
+            cancelEliminate() {
+                this.showEliminateModal = false;
+                this.render();
+            }
+
             addPlayer() {
-                if (this.playersRemaining < this.setupData.totalPlayers) {
-                    this.playersRemaining++;
+                if (this.activePlayers.length > 0) {
+                    // Named mode — restore last eliminated player
+                    if (!this.lastEliminated) return;
+                    const { name, table } = this.lastEliminated;
+                    this.activePlayers.push(name);
+                    if (table) this.playerTableMap[name] = table;
+                    this.playersRemaining = this.activePlayers.length;
+                    this.lastEliminated = null;
+                    this.recomputeTableCounts();
                     this.updateStats();
+                } else {
+                    // Anonymous mode
+                    if (this.playersRemaining < this.setupData.totalPlayers) {
+                        this.playersRemaining++;
+                        this.updateStats();
+                    }
                 }
             }
 
