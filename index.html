@@ -829,11 +829,21 @@
         .remote-layout {
             display: flex;
             flex-direction: column;
+            /* 100dvh = dynamic viewport height: adjusts for iOS address bar */
             height: 100vh;
+            height: 100dvh;
             background: #000;
             color: #fff;
             font-family: var(--font-ui);
             overflow: hidden;
+            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        }
+        /* Scrollable inner region used on flow screens (eliminate list, redraw list, etc.) */
+        .remote-scroll-area {
+            flex: 1;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            min-height: 0;
         }
         .remote-header {
             display: flex;
@@ -1710,39 +1720,42 @@ this.blindLevels = [
                 const hasPlayers = s && s.originalPlayerNames && s.originalPlayerNames.length > 0;
 
                 // ── grid (only when host state is known) ─────────────────
+                // Wrap in a scrollable div so that on short phones the bottom
+                // buttons aren't permanently hidden behind overflow:hidden.
                 const grid = s ? `
-                    <div style="flex:1;display:grid;grid-template-columns:1fr 1fr;
-                                grid-template-rows:repeat(6,1fr);gap:3px;background:#1a1a1a;min-height:0;">
+                    <div class="remote-scroll-area">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;
+                                    grid-template-rows:repeat(6,minmax(82px,1fr));
+                                    gap:4px;background:#1a1a1a;min-height:100%;">
 
-                        ${cell('▶&nbsp; Play',  "app.sendCommand('toggleTimer')", { color:'#10b981', bg:'#061a0e', dimmed: isRunning })}
-                        ${cell('⏸&nbsp; Pause', "app.sendCommand('toggleTimer')", { color:'#f59e0b', bg:'#1a1100', dimmed: !isRunning })}
+                            ${cell('▶&nbsp; Play',  "app.sendCommand('toggleTimer')", { color:'#10b981', bg:'#061a0e', dimmed: isRunning })}
+                            ${cell('⏸&nbsp; Pause', "app.sendCommand('toggleTimer')", { color:'#f59e0b', bg:'#1a1100', dimmed: !isRunning })}
 
-                        ${cell('← Prev Level', "app.sendCommand('prevLevel')", { color:'#ccc', bg:'#0a0a0a' })}
-                        ${cell('Next Level →', "app.sendCommand('nextLevel')", { color:'#ccc', bg:'#0a0a0a' })}
+                            ${cell('← Prev Level', "app.sendCommand('prevLevel')", { color:'#ccc', bg:'#0a0a0a' })}
+                            ${cell('Next Level →', "app.sendCommand('nextLevel')", { color:'#ccc', bg:'#0a0a0a' })}
 
-                        ${cell('Player Out', 'app.remoteStartEliminate()', { color:'#ef4444', bg:'#160404' })}
-                        ${cell('Undo Out',
-                               s.lastEliminatedName ? 'app.remoteUndoEliminate()' : '',
-                               { color:'#888', bg:'#0a0a0a', dimmed: !s.lastEliminatedName })}
+                            ${cell('Player Out', 'app.remoteStartEliminate()', { color:'#ef4444', bg:'#160404' })}
+                            ${cell('Undo Out',
+                                   s.lastEliminatedName ? 'app.remoteUndoEliminate()' : '',
+                                   { color:'#888', bg:'#0a0a0a', dimmed: !s.lastEliminatedName })}
 
-                        ${cell('Rebuy',  "app.sendCommand('addRebuy')",  { color:'#10b981', bg:'#061a0e', dimmed: !rebuysOpen })}
-                        ${cell('Cancel', "app.sendCommand('undoRebuy')", { color:'#888',    bg:'#0a0a0a', dimmed: !rebuysOpen })}
+                            ${cell('Rebuy',  "app.sendCommand('addRebuy')",  { color:'#10b981', bg:'#061a0e', dimmed: !rebuysOpen })}
+                            ${cell('Cancel', "app.sendCommand('undoRebuy')", { color:'#888',    bg:'#0a0a0a', dimmed: !rebuysOpen })}
 
-                        ${cell('+2 Min',   "app.sendCommand('addTwoMinutes')", { color:'#ccc',    bg:'#0a0a0a' })}
-                        ${cell('Late Reg', 'app.remoteStartLateReg()',         { color:'#3b82f6', bg:'#04101f' })}
+                            ${cell('+2 Min',   "app.sendCommand('addTwoMinutes')", { color:'#ccc',    bg:'#0a0a0a' })}
+                            ${cell('Late Reg', 'app.remoteStartLateReg()',         { color:'#3b82f6', bg:'#04101f' })}
 
-                        ${cell('Redraw Seats', hasPlayers ? 'app.remoteStartRedraw()' : '',
-                               { color: hasPlayers ? '#fff' : '#444', bg:'#111', span: true, dimmed: !hasPlayers })}
+                            ${cell('Redraw Seats', hasPlayers ? 'app.remoteStartRedraw()' : '',
+                                   { color: hasPlayers ? '#fff' : '#444', bg:'#111', span: true, dimmed: !hasPlayers })}
 
+                        </div>
                     </div>` : '';
 
                 // ── connection dot ────────────────────────────────────────
                 const dot = `<div class="remote-conn-dot ${connected ? 'live' : 'waiting'}" style="width:8px;height:8px;"></div>`;
 
                 return `
-                    <div style="display:flex;flex-direction:column;height:100vh;background:#000;
-                                color:#fff;font-family:var(--font-ui);overflow:hidden;
-                                padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);">
+                    <div class="remote-layout">
 
                         <div style="display:flex;align-items:center;justify-content:space-between;
                                     padding:0.6rem 1rem;border-bottom:1px solid #111;flex-shrink:0;">
@@ -1820,14 +1833,15 @@ this.blindLevels = [
                 const total = keys.reduce((sum, k) => sum + (this.remoteLateRegCounts[k] || 0), 0);
                 const totalOk = total === expected;
                 const nameOk = this.remoteLateRegName.trim().length > 0;
-                const canAssign = totalOk && nameOk && !this.remoteLateRegPending;
-
                 const pending = this.remoteLateRegPending;
 
+                // When named-player tracking is active, table counts are managed
+                // automatically — don't show manual adjusters.
+                const namedMode = s && s.activePlayers && s.activePlayers.length > 0;
+                const canAssign = (namedMode ? nameOk : (totalOk && nameOk)) && !pending;
+
                 return `
-                    <div style="display:flex;flex-direction:column;height:100vh;background:#000;color:#fff;
-                                font-family:var(--font-ui);overflow:hidden;
-                                padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);">
+                    <div class="remote-layout">
 
                         <!-- top strip -->
                         <div style="display:flex;align-items:center;justify-content:space-between;
@@ -1846,7 +1860,7 @@ this.blindLevels = [
                         </div>
 
                         <!-- scrollable form -->
-                        <div style="flex:1;overflow-y:auto;padding:1.5rem 1.25rem;display:flex;flex-direction:column;gap:1.5rem;">
+                        <div class="remote-scroll-area" style="padding:1.5rem 1.25rem;display:flex;flex-direction:column;gap:1.5rem;">
 
                             <!-- name input -->
                             <div>
@@ -1869,7 +1883,8 @@ this.blindLevels = [
                                 >
                             </div>
 
-                            <!-- table count adjusters -->
+                            <!-- table count adjusters (only shown in anonymous mode) -->
+                            ${namedMode ? '' : `
                             <div>
                                 <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.15em;color:#666;margin-bottom:0.75rem;">
                                     Players currently at each table
@@ -1904,7 +1919,7 @@ this.blindLevels = [
                                             color:${totalOk ? '#666' : '#ef4444'};font-weight:${totalOk ? '400' : '600'};">
                                     Total: ${total} / ${expected} players${totalOk ? ' ✓' : ' — adjust to match'}
                                 </div>
-                            </div>
+                            </div>`}
 
                         </div>
 
@@ -1938,9 +1953,7 @@ this.blindLevels = [
                 const { table, name } = s.lateRegDraw;
 
                 return `
-                    <div style="display:flex;flex-direction:column;height:100vh;background:#000;color:#fff;
-                                font-family:var(--font-ui);overflow:hidden;
-                                padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);">
+                    <div class="remote-layout">
 
                         <!-- top strip -->
                         <div style="display:flex;align-items:center;justify-content:space-between;
@@ -2021,9 +2034,7 @@ this.blindLevels = [
                 const players = s ? (s.activePlayers || []) : [];
 
                 return `
-                    <div style="display:flex;flex-direction:column;height:100vh;background:#000;color:#fff;
-                                font-family:var(--font-ui);overflow:hidden;
-                                padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);">
+                    <div class="remote-layout">
 
                         <!-- top strip -->
                         <div style="display:flex;align-items:center;justify-content:space-between;
@@ -2048,7 +2059,7 @@ this.blindLevels = [
                         </div>
 
                         <!-- scrollable player list -->
-                        <div style="flex:1;overflow-y:auto;">
+                        <div class="remote-scroll-area">
                             ${players.map(name => `
                                 <button onclick="app.remoteConfirmEliminate('${name.replace(/'/g, "\\'")}')"
                                         style="width:100%;padding:1.2rem 1.5rem;background:transparent;
@@ -2149,9 +2160,7 @@ this.blindLevels = [
                 };
 
                 return `
-                    <div style="display:flex;flex-direction:column;height:100vh;background:#000;color:#fff;
-                                font-family:var(--font-ui);overflow:hidden;
-                                padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);">
+                    <div class="remote-layout">
 
                         <!-- top strip -->
                         <div style="display:flex;align-items:center;justify-content:space-between;
@@ -2188,7 +2197,7 @@ this.blindLevels = [
                         </div>
 
                         <!-- scrollable player list -->
-                        <div style="flex:1;overflow-y:auto;">
+                        <div class="remote-scroll-area">
                             ${names.map((name, i) => {
                                 const sel = this.remoteRedrawSelections[i];
                                 return `
@@ -2243,9 +2252,7 @@ this.blindLevels = [
                 const title = result.length === 1 ? 'Final Table' : 'Table Redraw';
 
                 return `
-                    <div style="display:flex;flex-direction:column;height:100vh;background:#000;color:#fff;
-                                font-family:var(--font-ui);overflow:hidden;
-                                padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);">
+                    <div class="remote-layout">
 
                         <!-- top strip -->
                         <div style="display:flex;align-items:center;justify-content:space-between;
@@ -2259,7 +2266,7 @@ this.blindLevels = [
                         </div>
 
                         <!-- scrollable table assignments -->
-                        <div style="flex:1;overflow-y:auto;padding:1.25rem;">
+                        <div class="remote-scroll-area" style="padding:1.25rem;">
                             ${result.map(table => `
                                 <div style="margin-bottom:1.5rem;">
                                     <div style="font-size:0.65rem;text-transform:uppercase;letter-spacing:0.2em;color:#3b82f6;margin-bottom:0.75rem;">
@@ -3509,12 +3516,14 @@ this.blindLevels = [
                         </div>`;
                 }
 
-                // Setup step — adjust table counts
+                // Setup step
+                const namedMode = this.activePlayers.length > 0;
                 const total = tableKeys.reduce((s, k) => s + (this.lateRegTableCounts[k] || 0), 0);
                 const expected = this.playersRemaining;
                 const totalOk = total === expected;
                 const nameOk = this.lateRegName.length > 0;
-                const canAssign = totalOk && nameOk;
+                // In named mode the counts are auto-managed — just need a name
+                const canAssign = namedMode ? nameOk : (totalOk && nameOk);
                 return `
                     <div class="modal-overlay">
                         <div class="modal-content" style="min-width:300px;">
@@ -3535,6 +3544,7 @@ this.blindLevels = [
                                 >
                             </div>
 
+                            ${namedMode ? '' : `
                             <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-dim);margin-bottom:0.5rem;">Current players per table</div>
                             <div style="display:flex;flex-direction:column;gap:0.75rem;margin-bottom:1rem;">
                                 ${tableKeys.map(key => `
@@ -3551,6 +3561,7 @@ this.blindLevels = [
                             <div style="text-align:center;font-size:0.8rem;margin-bottom:1rem;${totalOk ? 'color:var(--text-dim);' : 'color:#ef4444;font-weight:600;'}">
                                 Total: ${total} / ${expected} players${totalOk ? '' : ' — adjust counts to match'}
                             </div>
+                            `}
                             <button onclick="app.confirmLateRegDraw()" class="btn btn-primary" style="width:100%;padding:0.75rem;" ${canAssign ? '' : 'disabled'}>
                                 Assign Table
                             </button>
