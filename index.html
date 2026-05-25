@@ -1163,6 +1163,7 @@ this.blindLevels = [
                 // Patch-not-replace bookkeeping (remote only)
                 this.remoteRendered = false;   // true once main grid has been built
                 this.remoteLastFlow = null;    // tracks which flow was active last tick
+                this.remoteHadState = false;   // true once host state has been received at least once
 
                 this.setupKeyboardShortcuts();
                 this.setupTimelineScrollListener();
@@ -1707,14 +1708,17 @@ this.blindLevels = [
                 if (this.remoteFlow !== null) return;
 
                 // ── main grid ──────────────────────────────────────────────────
-                if (!this.remoteRendered || this.remoteLastFlow !== null) {
-                    // First render, or returning from a flow — full rebuild
+                const stateJustArrived = s && !this.remoteHadState;
+                if (stateJustArrived) this.remoteHadState = true;
+
+                if (!this.remoteRendered || this.remoteLastFlow !== null || stateJustArrived) {
+                    // First render, returning from a flow, or state just arrived for the first time
                     this.remoteLastFlow = null;
                     this.remoteRendered = true;
                     document.getElementById('app').innerHTML = this.renderRemote();
                     return;
                 }
-                // Already on main grid — patch only (no scroll reset, no caret loss)
+                // Already on main grid with live state — patch only (no scroll reset)
                 if (s) this.patchRemoteMain(s);
             }
 
