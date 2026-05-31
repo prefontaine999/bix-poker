@@ -1522,6 +1522,7 @@ this.blindLevels = [
                             delete this.playerTableMap[name];
                             this.playersRemaining = this.activePlayers.length;
                             if (this.playersRemaining === 1) this.createConfetti();
+                            this.playEliminationSound();
                             this.recomputeTableCounts();
                             this.updateStats();
                             this.publishState();
@@ -1529,6 +1530,7 @@ this.blindLevels = [
                             // Anonymous fallback (no named players)
                             this.playersRemaining--;
                             if (this.playersRemaining === 1) this.createConfetti();
+                            this.playEliminationSound();
                             this.updateStats();
                             this.publishState();
                         }
@@ -2422,6 +2424,28 @@ this.blindLevels = [
                 } catch (e) {
                     console.log('Could not play level end sound:', e);
                 }
+            }
+
+            playEliminationSound() {
+                try {
+                    if (!this._eliminationAudio) {
+                        this._eliminationAudio = new Audio('sounds/elimination.mp3');
+                        this._eliminationAudio.volume = 1.0;
+                    }
+                    this._eliminationAudio.currentTime = 0;
+                    this._eliminationAudio.play().catch(() => {});
+                } catch (e) {}
+            }
+
+            playRebuySound() {
+                try {
+                    if (!this._rebuyAudio) {
+                        this._rebuyAudio = new Audio('sounds/rebuy.mp3');
+                        this._rebuyAudio.volume = 1.0;
+                    }
+                    this._rebuyAudio.currentTime = 0;
+                    this._rebuyAudio.play().catch(() => {});
+                } catch (e) {}
             }
 
             createConfetti() {
@@ -4278,6 +4302,7 @@ this.blindLevels = [
                     // Anonymous mode — just decrement
                     this.playersRemaining--;
                     if (this.playersRemaining === 1) this.createConfetti();
+                    this.playEliminationSound();
                     this.updateStats();
                 }
             }
@@ -4288,6 +4313,7 @@ this.blindLevels = [
                 delete this.playerTableMap[name];
                 this.playersRemaining = this.activePlayers.length;
                 if (this.playersRemaining === 1) this.createConfetti();
+                this.playEliminationSound();
                 this.showEliminateModal = false;
                 this.recomputeTableCounts();
                 this.publishState();
@@ -4438,6 +4464,7 @@ this.blindLevels = [
             addRebuy() {
                 if (this.areRebuysOpen()) {
                     this.rebuys++;
+                    this.playRebuySound();
                     this.updateStats();
                 }
             }
