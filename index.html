@@ -838,6 +838,12 @@
             overflow: hidden;
             padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
         }
+        /* Press feedback for all remote grid buttons */
+        .remote-layout button:active {
+            transform: scale(0.93);
+            filter: brightness(1.35) !important;
+            transition: transform 0.06s ease-out, filter 0.06s ease-out !important;
+        }
         /* Scrollable inner region used on flow screens (eliminate list, redraw list, etc.) */
         .remote-scroll-area {
             flex: 1;
@@ -1667,12 +1673,15 @@ this.blindLevels = [
                 setBtn('r-btn-undo-rebuy', !s.areRebuysOpen);
                 setBtn('r-btn-undo-out', !s.lastEliminatedName);
 
-                // Undo-Out label contains the eliminated name — patch text too
+                // Undo-Out: patch text AND onclick (onclick was baked as "" when no eliminated player existed)
                 const undoEl = document.getElementById('r-btn-undo-out');
                 if (undoEl) {
                     undoEl.textContent = s.lastEliminatedName
                         ? `↩ ${s.lastEliminatedName}`
                         : 'Undo Out';
+                    undoEl.onclick = s.lastEliminatedName
+                        ? () => app.remoteUndoEliminate()
+                        : null;
                 }
 
                 // Connection dot (updates on reconnect without full rebuild)
