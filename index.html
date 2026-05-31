@@ -1163,7 +1163,6 @@ this.blindLevels = [
                 // Patch-not-replace bookkeeping (remote only)
                 this.remoteRendered = false;   // true once main grid has been built
                 this.remoteLastFlow = null;    // tracks which flow was active last tick
-                this.remoteHadState = false;   // true once host state has been received at least once
 
                 this.setupKeyboardShortcuts();
                 this.setupTimelineScrollListener();
@@ -1285,14 +1284,17 @@ this.blindLevels = [
                         if (this.isRunning && this.breakTimeLeft > 0) {
                             this.breakTimeLeft--;
                             this.updateBreakDisplay();
-                            this.publishState();
                         } else if (this.isRunning && this.breakTimeLeft === 0) {
                             this.endBreak();
                         }
+                        this.publishState(); // always broadcast, even if paused on break
                         return;
                     }
 
                     const isLastLevel = this.currentLevel === this.blindLevels.length - 1;
+
+                    // Always broadcast current state so remotes get it even when paused
+                    this.publishState();
 
                     if (this.isRunning && this.timeLeft > 0 && !isLastLevel) {
                         this.timeLeft--;
@@ -1708,17 +1710,17 @@ this.blindLevels = [
                 if (this.remoteFlow !== null) return;
 
                 // ── main grid ──────────────────────────────────────────────────
-                const stateJustArrived = s && !this.remoteHadState;
-                if (stateJustArrived) this.remoteHadState = true;
+                // Rebuild if: first render, returning from a flow, or buttons aren't in the DOM
+                // (the last case catches the "Waiting for host…" → live transition)
+                const buttonsPresent = !!document.getElementById('r-btn-play');
 
-                if (!this.remoteRendered || this.remoteLastFlow !== null || stateJustArrived) {
-                    // First render, returning from a flow, or state just arrived for the first time
+                if (!this.remoteRendered || this.remoteLastFlow !== null || !buttonsPresent) {
                     this.remoteLastFlow = null;
                     this.remoteRendered = true;
                     document.getElementById('app').innerHTML = this.renderRemote();
                     return;
                 }
-                // Already on main grid with live state — patch only (no scroll reset)
+                // Buttons are in the DOM — patch only (no scroll reset)
                 if (s) this.patchRemoteMain(s);
             }
 
