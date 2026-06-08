@@ -299,6 +299,51 @@
             50% { opacity: 0.5; }
         }
 
+        /* ===== CLOCK OVERLAY ===== */
+        .clock-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 110;
+            background: rgba(0, 0, 0, 0.82);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1.5rem;
+        }
+
+        .clock-number {
+            font-family: var(--font-mono);
+            font-size: 38vw;
+            font-weight: 800;
+            line-height: 0.85;
+            letter-spacing: -0.05em;
+            font-variant-numeric: tabular-nums;
+            transition: color 0.4s ease;
+        }
+
+        .clock-number.clock-white  { color: #ffffff; }
+        .clock-number.clock-amber  { color: #f59e0b; }
+        .clock-number.clock-red    { color: #ef4444; }
+
+        @keyframes clock-pulse {
+            0%, 100% { transform: scale(1);   opacity: 1;   }
+            50%       { transform: scale(1.06); opacity: 0.85; }
+        }
+
+        .clock-number.clock-pulse {
+            animation: clock-pulse 0.7s ease-in-out infinite;
+        }
+
+        .clock-label {
+            font-family: var(--font-ui);
+            font-size: 1.4rem;
+            font-weight: 600;
+            letter-spacing: 0.35em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.35);
+        }
+
         /* ===== CONTROL PANEL (FLOATING) ===== */
         .control-panel-overlay {
             position: fixed;
@@ -1122,6 +1167,12 @@ this.blindLevels = [
                 this.shuffleInterval = null;
                 this.payoutPercentages = [];
                 this.placesPaid = 3;
+
+                // Clock feature
+                this.clockActive    = false;
+                this.clockTimeLeft  = 30;
+                this.clock2Played   = false;
+                this.clockInterval  = null;
                 this.tournamentFee = 0;
                 this.currentLevel = 0;
                 this.playersRemaining = 7;
@@ -1501,6 +1552,8 @@ this.blindLevels = [
                         lastEliminatedName:  this.lastEliminated ? this.lastEliminated.name : null,
                         lateRegDraw:         this.lateRegDraw,
                         redrawResult:        this.redrawResult,
+                        clockActive:         this.clockActive,
+                        clockTimeLeft:       this.clockTimeLeft,
                     });
                 } catch(e) {}
             }
@@ -1626,6 +1679,14 @@ this.blindLevels = [
                         this.publishState();
                         return;
                     }
+                    if (cmd.type === 'startClock') {
+                        this.startClock();
+                        return;
+                    }
+                    if (cmd.type === 'cancelClock') {
+                        this.cancelClock();
+                        return;
+                    }
                     return;
                 }
                 // ── String commands (main grid buttons) ───────────────────
@@ -1714,6 +1775,19 @@ this.blindLevels = [
                     undoEl.onclick = s.lastEliminatedName
                         ? () => app.remoteUndoEliminate()
                         : null;
+                }
+
+                // Clock button — flips between Clock / Cancel Clock
+                const clockBtn = document.getElementById('r-btn-clock');
+                if (clockBtn) {
+                    const active = s.clockActive;
+                    clockBtn.textContent    = active ? '✕ Cancel Clock' : '⏱ Clock';
+                    clockBtn.style.color    = active ? '#ef4444' : '#ccc';
+                    clockBtn.style.background = active ? '#1a0000' : '#0a0a0a';
+                    clockBtn.onclick        = active
+                        ? () => app.sendCommand({ type: 'cancelClock' })
+                        : () => app.sendCommand({ type: 'startClock' });
+                    clockBtn.disabled = false;
                 }
 
                 // Connection dot (updates on reconnect without full rebuild)
@@ -1841,6 +1915,11 @@ this.blindLevels = [
 
                         ${cell('Redraw Seats', hasPlayers ? 'app.remoteStartRedraw()' : '',
                                { color: hasPlayers ? '#fff' : '#444', bg:'#111', span: true, dimmed: !hasPlayers })}
+
+                        ${s.clockActive
+                            ? cell('✕ Cancel Clock', "app.sendCommand({type:'cancelClock'})", { color:'#ef4444', bg:'#1a0000', span: true, id:'r-btn-clock' })
+                            : cell('⏱ Clock',        "app.sendCommand({type:'startClock'})",  { color:'#ccc',    bg:'#0a0a0a', span: true, id:'r-btn-clock' })
+                        }
 
                     </div>` : `
                     <div style="flex:1;display:flex;align-items:center;justify-content:center;
@@ -2448,6 +2527,68 @@ this.blindLevels = [
                 } catch (e) {}
             }
 
+            // ── Clock feature ─────────────────────────────────────────────
+            startClock() {
+                clearInterval(this.clockInterval);
+                this.clockActive   = true;
+                this.clockTimeLeft = 30;
+                this.clock2Played  = false;
+                this.render();
+                this.publishState();
+
+                // Play announcement sound, then begin countdown when it finishes
+                try {
+                    const audio = new Audio('sounds/clock1.mp3');
+                    audio.volume = 1.0;
+                    const begin = () => this.startClockCountdown();
+                    audio.addEventListener('ended', begin, { once: true });
+                    audio.play().catch(begin); // if play() fails, start immediately
+                } catch(e) {
+                    this.startClockCountdown();
+                }
+            }
+
+            startClockCountdown() {
+                if (!this.clockActive) return; // cancelled during announcement
+                clearInterval(this.clockInterval);
+                this.clockInterval = setInterval(() => {
+                    if (!this.clockActive) { clearInterval(this.clockInterval); return; }
+                    this.clockTimeLeft--;
+
+                    if (this.clockTimeLeft === 3 && !this.clock2Played) {
+                        this.clock2Played = true;
+                        try { new Audio('sounds/clock2.mp3').play().catch(() => {}); } catch(e) {}
+                    }
+
+                    if (this.clockTimeLeft <= 0) {
+                        this.clockActive = false;
+                        clearInterval(this.clockInterval);
+                        this.render();
+                        this.publishState();
+                        return;
+                    }
+
+                    // Patch just the countdown number — no full re-render
+                    const numEl = document.getElementById('clock-number');
+                    if (numEl) {
+                        numEl.textContent = this.clockTimeLeft;
+                        const colorClass = this.clockTimeLeft <= 3  ? 'clock-red'
+                                         : this.clockTimeLeft <= 10 ? 'clock-amber'
+                                         :                            'clock-white';
+                        const pulseClass = this.clockTimeLeft <= 10 ? 'clock-pulse' : '';
+                        numEl.className = `clock-number mono ${colorClass} ${pulseClass}`;
+                    }
+                    this.publishState();
+                }, 1000);
+            }
+
+            cancelClock() {
+                clearInterval(this.clockInterval);
+                this.clockActive = false;
+                this.render();
+                this.publishState();
+            }
+
             createConfetti() {
                 const colors = ['#ffffff', '#10b981', '#ef4444', '#3b82f6', '#ec4899'];
                 for (let i = 0; i < 50; i++) {
@@ -2506,19 +2647,11 @@ this.blindLevels = [
                 const remainders = exacts.map((e, i) => e - floored[i]);
 
                 const flooredTotal = floored.reduce((a, b) => a + b, 0);
-                const numToBoost = Math.max(0, Math.round((totalPool - flooredTotal) / 1000));
+                const missing = totalPool - flooredTotal;
 
-                // Distribute leftover 1,000s to places with largest fractional remainders
-                // Tie-break: favour higher places (lower index)
-                const order = remainders
-                    .map((r, i) => ({ r, i }))
-                    .sort((a, b) => b.r - a.r || a.i - b.i)
-                    .map(x => x.i);
-
+                // All rounding error goes to 1st place
                 const result = [...floored];
-                for (let k = 0; k < numToBoost && k < order.length; k++) {
-                    result[order[k]] += 1000;
-                }
+                result[0] += missing;
                 return result;
             }
 
@@ -2897,6 +3030,7 @@ this.blindLevels = [
                 const sum    = percs.reduce((a, b) => a + (parseFloat(b) || 0), 0);
                 const isValid = Math.abs(sum - 100) < 0.001 && percs.every(p => parseFloat(p) > 0);
                 const sumDisplay = parseFloat(sum.toFixed(2));
+                const previewPayouts = this.calculatePayouts();
 
                 return `
                     <div class="modal-wrapper">
@@ -2947,21 +3081,22 @@ this.blindLevels = [
                                             <input
                                                 type="number"
                                                 value="${pct}"
-                                                min="0.1"
-                                                step="0.5"
-                                                oninput="app.updatePayoutPercentage(${index}, this.value)"
+                                                min="1"
+                                                step="1"
+                                                oninput="app.patchPayoutPercentage(${index}, this.value)"
+                                                onchange="app.updatePayoutPercentage(${index}, this.value)"
                                                 class="setup-input"
                                                 style="max-width:110px;text-align:center;font-size:1.1rem;"
                                             >
                                             <span style="color:var(--text-dim);font-size:1rem;">%</span>
-                                            <span style="color:var(--text-dim);font-size:0.85rem;min-width:90px;">
-                                                ≈ ฿${this.formatNumber(Math.round(netPool * (parseFloat(pct) || 0) / 100))}
+                                            <span id="payout-preview-${index}" style="color:var(--text-dim);font-size:0.85rem;min-width:90px;">
+                                                = ฿${this.formatNumber(previewPayouts[index] || 0)}
                                             </span>
                                         </div>
                                     </div>
                                 `).join('')}
 
-                                <div style="margin-top:1rem;padding:0.75rem 1rem;border-radius:0.5rem;
+                                <div id="payout-validation" style="margin-top:1rem;padding:0.75rem 1rem;border-radius:0.5rem;
                                     background:${isValid ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)'};
                                     border:1px solid ${isValid ? 'var(--success-color)' : 'var(--danger-color)'};
                                     text-align:center;">
@@ -2976,7 +3111,7 @@ this.blindLevels = [
                                 <button onclick="app.backToSetup()" class="btn btn-secondary flex-1">
                                     Back to Setup
                                 </button>
-                                <button onclick="app.goToSeating()" class="btn btn-primary flex-1" ${!isValid ? 'disabled' : ''}>
+                                <button id="payout-next-btn" onclick="app.goToSeating()" class="btn btn-primary flex-1" ${!isValid ? 'disabled' : ''}>
                                     Next: Seating
                                 </button>
                             </div>
@@ -3251,6 +3386,14 @@ this.blindLevels = [
                         </div>
                     </div>
                     
+                    ${this.clockActive ? `
+                    <div class="clock-overlay">
+                        <div id="clock-number" class="clock-number mono ${this.clockTimeLeft <= 3 ? 'clock-red' : this.clockTimeLeft <= 10 ? 'clock-amber' : 'clock-white'} ${this.clockTimeLeft <= 10 ? 'clock-pulse' : ''}">
+                            ${this.clockTimeLeft}
+                        </div>
+                        <div class="clock-label">Clock</div>
+                    </div>` : ''}
+
                     <div class="control-panel-overlay ${this.controlPanelOpen ? 'open' : ''}" onclick="app.toggleControlPanel()"></div>
                     <div class="control-panel ${this.controlPanelOpen ? 'open' : ''}">
                         <div class="control-panel-section">
@@ -4040,6 +4183,38 @@ this.blindLevels = [
                 this.render();
             }
 
+            // Called on every keystroke — patches the DOM without rebuilding it
+            patchPayoutPercentage(index, value) {
+                this.payoutPercentages[index] = parseFloat(value) || 0;
+
+                const percs = this.payoutPercentages;
+                const sum = percs.reduce((a, b) => a + (parseFloat(b) || 0), 0);
+                const isValid = Math.abs(sum - 100) < 0.001 && percs.every(p => parseFloat(p) > 0);
+                const sumDisplay = parseFloat(sum.toFixed(2));
+
+                // Update preview amounts
+                const previews = this.calculatePayouts();
+                percs.forEach((_, i) => {
+                    const el = document.getElementById(`payout-preview-${i}`);
+                    if (el) el.textContent = `= ฿${this.formatNumber(previews[i] || 0)}`;
+                });
+
+                // Update validation box
+                const validEl = document.getElementById('payout-validation');
+                if (validEl) {
+                    validEl.style.background   = isValid ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)';
+                    validEl.style.borderColor  = isValid ? 'var(--success-color)' : 'var(--danger-color)';
+                    validEl.innerHTML = isValid
+                        ? `<span style="color:var(--success-color);font-weight:600;">✓ Total: 100%</span>`
+                        : `<span style="color:var(--danger-color);">Percentages must add up to 100% — currently at ${sumDisplay}%</span>`;
+                }
+
+                // Update Next button
+                const nextBtn = document.getElementById('payout-next-btn');
+                if (nextBtn) nextBtn.disabled = !isValid;
+            }
+
+            // Called on blur / Enter — commits and does a full render to sync everything
             updatePayoutPercentage(index, value) {
                 this.payoutPercentages[index] = parseFloat(value) || 0;
                 this.render();
