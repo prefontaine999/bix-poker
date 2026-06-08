@@ -2577,10 +2577,21 @@ this.blindLevels = [
                     }
 
                     if (this.clockTimeLeft <= 0) {
-                        this.clockActive = false;
                         clearInterval(this.clockInterval);
-                        this.render();
-                        this.publishState();
+                        // Show "0" and linger for 3 s before dismissing
+                        const numEl = document.getElementById('clock-number');
+                        if (numEl) {
+                            numEl.textContent = '0';
+                            numEl.className   = 'clock-number mono clock-red clock-pulse';
+                        }
+                        this.clockTimeLeft = 0;
+                        this.publishState(); // broadcast the 0 state while still active
+                        setTimeout(() => {
+                            if (!this.clockActive) return; // cancelled during linger
+                            this.clockActive = false;
+                            this.render();
+                            this.publishState();
+                        }, 3000);
                         return;
                     }
 
