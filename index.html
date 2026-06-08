@@ -1211,7 +1211,7 @@ this.blindLevels = [
                 this.activePlayers = [];    // names of players currently in the tournament
                 this.playerTableMap = {};   // { playerName: 'pokerTable' | 'kitchenTable' | 'poolTable' }
                 this.showEliminateModal = false;
-                this.lastEliminated = null; // { name, table } — for single-undo
+                this.eliminationHistory = []; // stack of { name, table } — supports multi-undo
 
                 // Remote flow state (phone-side only — not used on host)
                 this.remoteFlow = null; // null | 'lateReg' | 'redraw' | 'eliminate'
@@ -1465,7 +1465,7 @@ this.blindLevels = [
 
                 const btnAddPlayer = document.querySelector('[onclick="app.addPlayer()"]');
                 if (btnAddPlayer) btnAddPlayer.disabled = this.activePlayers.length > 0
-                    ? !this.lastEliminated
+                    ? this.eliminationHistory.length === 0
                     : this.playersRemaining >= this.setupData.totalPlayers;
 
                 const btnAddRebuy = document.querySelector('[onclick="app.addRebuy()"]');
@@ -1554,7 +1554,8 @@ this.blindLevels = [
                         lateRegTableCounts:  {...this.lateRegTableCounts},
                         originalPlayerNames: [...this.originalPlayerNames],
                         activePlayers:       [...this.activePlayers],
-                        lastEliminatedName:  this.lastEliminated ? this.lastEliminated.name : null,
+                        lastEliminatedName:  this.eliminationHistory.length > 0 ? this.eliminationHistory[this.eliminationHistory.length - 1].name : null,
+                        eliminatedNames:     this.eliminationHistory.map(e => e.name),
                         lateRegDraw:         this.lateRegDraw,
                         redrawResult:        this.redrawResult,
                         clockActive:         this.clockActive,
@@ -1575,7 +1576,7 @@ this.blindLevels = [
                         // Phone selected who is out
                         const name = cmd.name;
                         if (name && this.activePlayers.includes(name)) {
-                            this.lastEliminated = { name, table: this.playerTableMap[name] || null };
+                            this.eliminationHistory.push({ name, table: this.playerTableMap[name] || null });
                             this.activePlayers = this.activePlayers.filter(p => p !== name);
                             delete this.playerTableMap[name];
                             this.playersRemaining = this.activePlayers.length;
@@ -1595,12 +1596,15 @@ this.blindLevels = [
                         return;
                     }
                     if (cmd.type === 'undoEliminate') {
-                        if (this.lastEliminated) {
-                            const { name, table } = this.lastEliminated;
+                        const targetName = cmd.name || null;
+                        const idx = targetName
+                            ? this.eliminationHistory.findIndex(e => e.name === targetName)
+                            : this.eliminationHistory.length - 1;
+                        if (idx >= 0) {
+                            const { name, table } = this.eliminationHistory.splice(idx, 1)[0];
                             this.activePlayers.push(name);
                             if (table) this.playerTableMap[name] = table;
                             this.playersRemaining = this.activePlayers.length;
-                            this.lastEliminated = null;
                             this.recomputeTableCounts();
                         } else if (!this.activePlayers.length && this.playersRemaining < this.setupData.totalPlayers) {
                             this.playersRemaining++;
@@ -1810,12 +1814,8 @@ this.blindLevels = [
                 // Undo-Out: patch text AND onclick (onclick was baked as "" when no eliminated player existed)
                 const undoEl = document.getElementById('r-btn-undo-out');
                 if (undoEl) {
-                    undoEl.textContent = s.lastEliminatedName
-                        ? `↩ ${s.lastEliminatedName}`
-                        : 'Undo Out';
-                    undoEl.onclick = s.lastEliminatedName
-                        ? () => app.remoteUndoEliminate()
-                        : null;
+                    undoEl.textContent = s.lastEliminatedName ? '↩ Reinstate' : 'Undo Out';
+                    undoEl.onclick     = s.lastEliminatedName ? () => app.remoteStartReinstate() : null;
                 }
 
                 // Clock button — flips between Clock / Cancel Clock
@@ -1890,6 +1890,9 @@ this.blindLevels = [
                 if (this.remoteFlow === 'eliminate') {
                     return this.renderRemoteEliminateSetup(s, connected);
                 }
+                if (this.remoteFlow === 'reinstate') {
+                    return this.renderRemoteReinstateSetup(s, connected);
+                }
                 if (this.remoteFlow === 'lateReg') {
                     // Show result once we get confirmation back from host
                     if (this.remoteLateRegPending && s && s.lateRegDraw) {
@@ -1948,8 +1951,8 @@ this.blindLevels = [
                         ${cell('Next Level →', "app.sendCommand('nextLevel')", { color:'#ccc', bg:'#0a0a0a' })}
 
                         ${cell('Player Out', 'app.remoteStartEliminate()', { color:'#ef4444', bg:'#160404' })}
-                        ${cell(s.lastEliminatedName ? `↩ ${s.lastEliminatedName}` : 'Undo Out',
-                               s.lastEliminatedName ? 'app.remoteUndoEliminate()' : '',
+                        ${cell(s.lastEliminatedName ? '↩ Reinstate' : 'Undo Out',
+                               s.lastEliminatedName ? 'app.remoteStartReinstate()' : '',
                                { color:'#888', bg:'#0a0a0a', dimmed: !s.lastEliminatedName, id:'r-btn-undo-out' })}
 
                         ${cell('Rebuy',  "app.sendCommand('addRebuy')",  { color:'#10b981', bg:'#061a0e', dimmed: !rebuysOpen, id:'r-btn-rebuy'      })}
@@ -2265,6 +2268,24 @@ this.blindLevels = [
                 this.sendCommand({ type: 'undoEliminate' });
             }
 
+            remoteStartReinstate() {
+                const s = this.remoteState;
+                if (!s || !s.eliminatedNames || s.eliminatedNames.length === 0) return;
+                this.remoteFlow = 'reinstate';
+                this.rebuildRemote();
+            }
+
+            remoteConfirmReinstate(name) {
+                this.sendCommand({ type: 'undoEliminate', name });
+                this.remoteFlow = null;
+                this.rebuildRemote();
+            }
+
+            remoteCancelReinstate() {
+                this.remoteFlow = null;
+                this.rebuildRemote();
+            }
+
             renderRemoteEliminateSetup(s, connected) {
                 const dot = `<div class="remote-conn-dot ${connected ? 'live' : 'waiting'}" style="width:8px;height:8px;"></div>`;
                 const players = s ? (s.activePlayers || []) : [];
@@ -2312,6 +2333,63 @@ this.blindLevels = [
                         <!-- cancel -->
                         <div style="padding:1rem 1.25rem;flex-shrink:0;border-top:1px solid #111;">
                             <button onclick="app.remoteCancelEliminate()"
+                                    style="width:100%;padding:0.85rem;border:1px solid #222;border-radius:0.5rem;
+                                           background:transparent;color:#666;
+                                           font-size:1rem;font-family:var(--font-ui);cursor:pointer;
+                                           -webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>`;
+            }
+
+            renderRemoteReinstateSetup(s, connected) {
+                const dot = `<div class="remote-conn-dot ${connected ? 'live' : 'waiting'}" style="width:8px;height:8px;"></div>`;
+                const eliminated = s ? (s.eliminatedNames || []) : [];
+
+                return `
+                    <div class="remote-layout">
+
+                        <!-- top strip -->
+                        <div style="display:flex;align-items:center;justify-content:space-between;
+                                    padding:0.6rem 1rem;border-bottom:1px solid #111;flex-shrink:0;">
+                            <button onclick="app.remoteCancelReinstate()"
+                                    style="background:none;border:none;color:#666;font-size:0.75rem;
+                                           font-family:var(--font-ui);cursor:pointer;padding:0.25rem 0.5rem;">
+                                ← Back
+                            </button>
+                            <span style="font-size:0.65rem;font-weight:800;text-transform:uppercase;letter-spacing:0.15em;">
+                                Reinstate Player
+                            </span>
+                            <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.65rem;color:#666;">
+                                ${dot}
+                            </div>
+                        </div>
+
+                        <!-- subtitle -->
+                        <div style="padding:0.75rem 1.25rem;background:#0a0a0a;border-bottom:1px solid #111;
+                                    font-size:0.75rem;color:#666;flex-shrink:0;">
+                            Who is coming back?
+                        </div>
+
+                        <!-- scrollable eliminated list (most recent first) -->
+                        <div class="remote-scroll-area">
+                            ${[...eliminated].reverse().map(name => `
+                                <button onclick="app.remoteConfirmReinstate('${name.replace(/'/g, "\\'")}')"
+                                        style="width:100%;padding:1.2rem 1.5rem;background:transparent;
+                                               border:none;border-bottom:1px solid #0f0f0f;
+                                               color:#10b981;font-size:1.1rem;font-weight:600;
+                                               font-family:var(--font-ui);text-align:left;cursor:pointer;
+                                               -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+                                               display:block;">
+                                    ↩ ${name}
+                                </button>
+                            `).join('')}
+                        </div>
+
+                        <!-- cancel -->
+                        <div style="padding:1rem 1.25rem;flex-shrink:0;border-top:1px solid #111;">
+                            <button onclick="app.remoteCancelReinstate()"
                                     style="width:100%;padding:0.85rem;border:1px solid #222;border-radius:0.5rem;
                                            background:transparent;color:#666;
                                            font-size:1rem;font-family:var(--font-ui);cursor:pointer;
@@ -3551,7 +3629,7 @@ this.blindLevels = [
                                     ${icons.Minus} OUT
                                 </button>
                                 <button onclick="app.addPlayer()"
-                                    ${(this.activePlayers.length > 0 ? !this.lastEliminated : this.playersRemaining >= this.setupData.totalPlayers) ? 'disabled' : ''}
+                                    ${(this.activePlayers.length > 0 ? this.eliminationHistory.length === 0 : this.playersRemaining >= this.setupData.totalPlayers) ? 'disabled' : ''}
                                     class="btn btn-icon" title="Undo elimination">
                                     ${icons.RotateCcw}
                                 </button>
@@ -4485,7 +4563,7 @@ this.blindLevels = [
                 this.showSeating = false;
                 this.showRedraw = false;
                 this.showEliminateModal = false;
-                this.lastEliminated = null;
+                this.eliminationHistory = [];
                 this.redrawResult = null;
 
                 if (this.tableAssignments) {
@@ -4632,7 +4710,7 @@ this.blindLevels = [
             }
 
             confirmEliminate(name) {
-                this.lastEliminated = { name, table: this.playerTableMap[name] || null };
+                this.eliminationHistory.push({ name, table: this.playerTableMap[name] || null });
                 this.activePlayers = this.activePlayers.filter(p => p !== name);
                 delete this.playerTableMap[name];
                 this.playersRemaining = this.activePlayers.length;
@@ -4651,13 +4729,12 @@ this.blindLevels = [
 
             addPlayer() {
                 if (this.activePlayers.length > 0) {
-                    // Named mode — restore last eliminated player
-                    if (!this.lastEliminated) return;
-                    const { name, table } = this.lastEliminated;
+                    // Named mode — restore most recently eliminated player
+                    if (this.eliminationHistory.length === 0) return;
+                    const { name, table } = this.eliminationHistory.pop();
                     this.activePlayers.push(name);
                     if (table) this.playerTableMap[name] = table;
                     this.playersRemaining = this.activePlayers.length;
-                    this.lastEliminated = null;
                     this.recomputeTableCounts();
                     this.updateStats();
                 } else {
