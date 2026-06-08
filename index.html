@@ -1781,21 +1781,15 @@ this.blindLevels = [
                 const clockBtn = document.getElementById('r-btn-clock');
                 if (clockBtn) {
                     const active = s.clockActive;
-                    clockBtn.textContent    = active ? '✕ Cancel Clock' : '⏱ Clock';
-                    clockBtn.style.color    = active ? '#ef4444' : '#ccc';
+                    clockBtn.textContent      = active ? '✕ Cancel' : '⏱ Clock';
+                    clockBtn.style.color      = active ? '#ef4444' : '#ccc';
                     clockBtn.style.background = active ? '#1a0000' : '#0a0a0a';
-                    clockBtn.onclick        = active
-                        ? () => app.sendCommand({ type: 'cancelClock' })
-                        : () => app.sendCommand({ type: 'startClock' });
+                    clockBtn.onclick          = active
+                        ? () => app.remoteCancelClock()
+                        : () => app.remoteStartClock();
                     clockBtn.disabled = false;
                 }
 
-                // Connection dot (updates on reconnect without full rebuild)
-                const dotEl  = document.getElementById('r-conn-dot');
-                const textEl = document.getElementById('r-conn-text');
-                const live   = this.ablyConnected;
-                if (dotEl)  { dotEl.className = `remote-conn-dot ${live ? 'live' : 'waiting'}`; dotEl.style.width='8px'; dotEl.style.height='8px'; }
-                if (textEl)   textEl.textContent = live ? 'Live' : 'Connecting…';
             }
 
             // ── Timer-tick entry point (called every second on remote) ────────
@@ -1913,12 +1907,12 @@ this.blindLevels = [
                         ${cell('+2 Min',   "app.sendCommand('addTwoMinutes')", { color:'#ccc',    bg:'#0a0a0a' })}
                         ${cell('Late Reg', 'app.remoteStartLateReg()',         { color:'#3b82f6', bg:'#04101f' })}
 
-                        ${cell('Redraw Seats', hasPlayers ? 'app.remoteStartRedraw()' : '',
-                               { color: hasPlayers ? '#fff' : '#444', bg:'#111', span: true, dimmed: !hasPlayers })}
+                        ${cell('Redraw', hasPlayers ? 'app.remoteStartRedraw()' : '',
+                               { color: hasPlayers ? '#fff' : '#444', bg:'#111', dimmed: !hasPlayers })}
 
                         ${s.clockActive
-                            ? cell('✕ Cancel Clock', "app.sendCommand({type:'cancelClock'})", { color:'#ef4444', bg:'#1a0000', span: true, id:'r-btn-clock' })
-                            : cell('⏱ Clock',        "app.sendCommand({type:'startClock'})",  { color:'#ccc',    bg:'#0a0a0a', span: true, id:'r-btn-clock' })
+                            ? cell('✕ Cancel', 'app.remoteCancelClock()', { color:'#ef4444', bg:'#1a0000', id:'r-btn-clock' })
+                            : cell('⏱ Clock',  'app.remoteStartClock()',  { color:'#ccc',    bg:'#0a0a0a', id:'r-btn-clock' })
                         }
 
                     </div>` : `
@@ -1930,17 +1924,6 @@ this.blindLevels = [
 
                 return `
                     <div class="remote-layout">
-
-                        <!-- connection pill -->
-                        <div style="display:flex;align-items:center;justify-content:flex-end;
-                                    padding:0.3rem 0.75rem;flex-shrink:0;">
-                            <div style="display:flex;align-items:center;gap:0.3rem;font-size:0.6rem;color:#444;">
-                                <div id="r-conn-dot" class="remote-conn-dot ${connected ? 'live' : 'waiting'}" style="width:6px;height:6px;"></div>
-                                <span id="r-conn-text">${connected ? (s ? 'Live' : 'Waiting…') : 'Connecting…'}</span>
-                            </div>
-                        </div>
-
-                        <!-- buttons fill everything below the strip -->
                         <div style="flex:1;min-height:0;display:flex;flex-direction:column;">
                             ${gridContent}
                         </div>
@@ -2283,6 +2266,14 @@ this.blindLevels = [
             }
 
             // ── Remote: Redraw flow ───────────────────────────────────────
+
+            remoteStartClock() {
+                this.sendCommand({ type: 'startClock' });
+            }
+
+            remoteCancelClock() {
+                this.sendCommand({ type: 'cancelClock' });
+            }
 
             remoteStartRedraw() {
                 const s = this.remoteState;
