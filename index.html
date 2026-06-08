@@ -11,6 +11,7 @@
     <link rel="manifest" href="data:application/json,%7B%22name%22%3A%22Risithai%20Poker%20Tour%22%2C%22short_name%22%3A%22Risithai%22%2C%22start_url%22%3A%22.%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23000000%22%2C%22theme_color%22%3A%22%23000000%22%7D">
     <title>Risithai Tournament Timer</title>
     <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;800&display=swap" rel="stylesheet">
@@ -1121,6 +1122,7 @@ this.blindLevels = [
 
                 this.showSetup = true;
                 this.showPayouts = false;
+                this.showQR = false;
                 this.showSeating = false;
                 this.showRedraw = false;
                 this.showWarning = false;
@@ -1715,6 +1717,33 @@ this.blindLevels = [
                 const el = document.getElementById('remote-code-badge');
                 if (!el) return;
                 el.innerHTML = this.roomCodeBadgeHTML();
+                this.renderQRCode();
+            }
+
+            renderQRCode(size = 148) {
+                const el = document.getElementById('remote-qr-canvas');
+                if (!el || !window.QRCode) return;
+                el.innerHTML = '';
+
+                // QR only works over http/https — file:// URLs can't be opened on another device
+                if (!location.protocol.startsWith('http')) {
+                    el.style.background = 'transparent';
+                    el.innerHTML = `<div style="font-size:0.6rem;color:#444;text-align:center;
+                                               padding:8px 4px;line-height:1.5;width:${size}px;">
+                                        QR available once<br>deployed to GitHub Pages
+                                    </div>`;
+                    return;
+                }
+
+                const url = `${location.origin}${location.pathname}?remote=${this.roomCode}`;
+                new QRCode(el, {
+                    text:         url,
+                    width:        size,
+                    height:       size,
+                    colorDark:    '#000000',
+                    colorLight:   '#ffffff',
+                    correctLevel: QRCode.CorrectLevel.M
+                });
             }
 
             roomCodeBadgeHTML() {
@@ -1727,6 +1756,9 @@ this.blindLevels = [
                                 padding:0.75rem 1.5rem;cursor:pointer;margin:0 auto;">
                         <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.15em;color:#666;">
                             Remote Control
+                        </div>
+                        <div id="remote-qr-canvas"
+                             style="background:#fff;border-radius:0.35rem;padding:6px;line-height:0;">
                         </div>
                         <div style="font-family:var(--font-mono);font-size:2rem;font-weight:800;letter-spacing:0.2em;color:#fff;">
                             ${this.roomCode}
@@ -2750,6 +2782,8 @@ this.blindLevels = [
                     content = this.renderSetup();
                 } else if (this.showPayouts) {
                     content = this.renderPayouts();
+                } else if (this.showQR) {
+                    content = this.renderQRPage();
                 } else if (this.showSeating) {
                     content = this.renderSeating();
                 } else if (this.showRedraw) {
@@ -2769,7 +2803,10 @@ this.blindLevels = [
                 }
                 
                 app.innerHTML = content;
-                
+
+                // Render QR code — large on dedicated QR page, small on setup badge
+                this.renderQRCode(this.showQR ? 220 : 148);
+
                 // Restore scroll positions (use rAF for Safari which needs a frame to lay out new DOM)
                 requestAnimationFrame(() => {
                     if (timelineScroll > 0) {
@@ -2800,9 +2837,6 @@ this.blindLevels = [
                             <div class="setup-header">
                                 <h1 class="setup-title">TOURNAMENT SETUP</h1>
                                 <p class="setup-subtitle">Configure your poker game settings</p>
-                                <div id="remote-code-badge" class="remote-code-badge" style="margin-top:1rem;justify-content:center;align-items:center;display:flex;flex-direction:column;gap:0.2rem;">
-                                    ${this.roomCodeBadgeHTML()}
-                                </div>
                             </div>
 
                             <div class="setup-card">
@@ -3138,10 +3172,66 @@ this.blindLevels = [
                                 <button onclick="app.backToSetup()" class="btn btn-secondary flex-1">
                                     Back to Setup
                                 </button>
-                                <button id="payout-next-btn" onclick="app.goToSeating()" class="btn btn-primary flex-1" ${!isValid ? 'disabled' : ''}>
-                                    Next: Seating
+                                <button id="payout-next-btn" onclick="app.goToQR()" class="btn btn-primary flex-1" ${!isValid ? 'disabled' : ''}>
+                                    Next →
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            renderQRPage() {
+                const dotClass  = this.ablyConnected ? 'live' : 'waiting';
+                const statusText = this.ablyConnected ? 'Ready to connect' : 'Connecting…';
+                const url = `${location.origin}${location.pathname}?remote=${this.roomCode}`;
+
+                return `
+                    <div class="modal-wrapper">
+                        <div class="setup-content">
+                            <div class="setup-header">
+                                <h1 class="setup-title">CONNECT REMOTES</h1>
+                                <p class="setup-subtitle">Scan the QR code with your phone to open the remote control</p>
+                            </div>
+
+                            <div class="setup-card">
+                                <div style="display:flex;flex-direction:column;align-items:center;gap:1.25rem;padding:1.5rem 0;">
+
+                                    <!-- QR code -->
+                                    <div id="remote-qr-canvas"
+                                         style="background:#fff;border-radius:0.5rem;padding:10px;line-height:0;">
+                                    </div>
+
+                                    <!-- Room code -->
+                                    <div style="font-family:var(--font-mono);font-size:2.5rem;font-weight:800;
+                                                letter-spacing:0.3em;color:#fff;">
+                                        ${this.roomCode}
+                                    </div>
+
+                                    <!-- Connection status -->
+                                    <div style="display:flex;align-items:center;gap:0.5rem;font-size:0.75rem;color:#666;">
+                                        <div class="remote-conn-dot ${dotClass}"></div>
+                                        ${statusText}
+                                    </div>
+
+                                    <!-- Manual URL fallback -->
+                                    <div style="font-size:0.6rem;color:#333;word-break:break-all;
+                                                text-align:center;max-width:280px;line-height:1.5;">
+                                        ${url}
+                                    </div>
+
+                                </div>
+                            </div>
+
+                            <div class="setup-buttons" style="margin-top:1.5rem;">
+                                <button onclick="app.backToPayouts()" class="btn btn-secondary flex-1">
+                                    ← Back
+                                </button>
+                                <button onclick="app.goToSeating()" class="btn btn-primary flex-1">
+                                    Next: Seating →
+                                </button>
+                            </div>
+
                         </div>
                     </div>
                 `;
@@ -4247,8 +4337,15 @@ this.blindLevels = [
                 this.render();
             }
 
+            goToQR() {
+                this.showPayouts = false;
+                this.showQR = true;
+                this.render();
+            }
+
             goToSeating() {
                 this.showPayouts = false;
+                this.showQR = false;
                 this.showSeating = true;
                 this.playerNames = new Array(this.setupData.totalPlayers).fill('');
                 this.tableCount = this.setupData.totalPlayers > 13 ? 3 : this.setupData.totalPlayers > 7 ? 2 : 1;
@@ -4258,6 +4355,7 @@ this.blindLevels = [
 
             backToPayouts() {
                 this.showSeating = false;
+                this.showQR = false;
                 this.showPayouts = true;
                 this.render();
             }
@@ -4383,6 +4481,7 @@ this.blindLevels = [
                 this.isExtended = false;
                 this.showSetup = false;
                 this.showPayouts = false;
+                this.showQR = false;
                 this.showSeating = false;
                 this.showRedraw = false;
                 this.showEliminateModal = false;
