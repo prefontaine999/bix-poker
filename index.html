@@ -1763,8 +1763,14 @@ this.blindLevels = [
                     el.style.opacity = dimmed ? '0.2' : '1';
                     el.disabled = !!dimmed;
                 };
-                setBtn('r-btn-play',      s.isRunning);
-                setBtn('r-btn-pause',    !s.isRunning);
+                // Play/Pause toggle — single button, flips label + colour
+                const ppBtn = document.getElementById('r-btn-playpause');
+                if (ppBtn) {
+                    ppBtn.innerHTML       = s.isRunning ? '⏸&nbsp; Pause' : '▶&nbsp; Play';
+                    ppBtn.style.color     = s.isRunning ? '#f59e0b' : '#10b981';
+                    ppBtn.style.background = s.isRunning ? '#1a1100' : '#061a0e';
+                    ppBtn.disabled = false;
+                }
                 setBtn('r-btn-rebuy',    !s.areRebuysOpen);
                 setBtn('r-btn-undo-rebuy', !s.areRebuysOpen);
                 setBtn('r-btn-undo-out', !s.lastEliminatedName);
@@ -1900,8 +1906,11 @@ this.blindLevels = [
                                 grid-template-rows:repeat(6,1fr);
                                 gap:4px;background:#1a1a1a;height:100%;">
 
-                        ${cell('▶&nbsp; Play',  "app.sendCommand('toggleTimer')", { color:'#10b981', bg:'#061a0e', dimmed: isRunning,  id:'r-btn-play'  })}
-                        ${cell('⏸&nbsp; Pause', "app.sendCommand('toggleTimer')", { color:'#f59e0b', bg:'#1a1100', dimmed: !isRunning, id:'r-btn-pause' })}
+                        ${cell(isRunning ? '⏸&nbsp; Pause' : '▶&nbsp; Play',
+                               "app.sendCommand('toggleTimer')",
+                               { color: isRunning ? '#f59e0b' : '#10b981',
+                                 bg:    isRunning ? '#1a1100' : '#061a0e',
+                                 span: true, id: 'r-btn-playpause' })}
 
                         ${cell('← Prev Level', "app.sendCommand('prevLevel')", { color:'#ccc', bg:'#0a0a0a' })}
                         ${cell('Next Level →', "app.sendCommand('nextLevel')", { color:'#ccc', bg:'#0a0a0a' })}
