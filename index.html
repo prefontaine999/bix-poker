@@ -1120,7 +1120,7 @@ this.blindLevels = [
                 this.isShuffling = false;
                 this.shuffleNames = [];
                 this.shuffleInterval = null;
-                this.payouts = [];
+                this.payoutPercentages = [];
                 this.placesPaid = 3;
                 this.tournamentFee = 0;
                 this.currentLevel = 0;
@@ -1522,6 +1522,7 @@ this.blindLevels = [
                             delete this.playerTableMap[name];
                             this.playersRemaining = this.activePlayers.length;
                             if (this.playersRemaining === 1) this.createConfetti();
+                            this.playEliminationSound();
                             this.recomputeTableCounts();
                             this.updateStats();
                             this.publishState();
@@ -1529,6 +1530,7 @@ this.blindLevels = [
                             // Anonymous fallback (no named players)
                             this.playersRemaining--;
                             if (this.playersRemaining === 1) this.createConfetti();
+                            this.playEliminationSound();
                             this.updateStats();
                             this.publishState();
                         }
@@ -2424,6 +2426,28 @@ this.blindLevels = [
                 }
             }
 
+            playEliminationSound() {
+                try {
+                    if (!this._eliminationAudio) {
+                        this._eliminationAudio = new Audio('sounds/elimination.mp3');
+                        this._eliminationAudio.volume = 1.0;
+                    }
+                    this._eliminationAudio.currentTime = 0;
+                    this._eliminationAudio.play().catch(() => {});
+                } catch (e) {}
+            }
+
+            playRebuySound() {
+                try {
+                    if (!this._rebuyAudio) {
+                        this._rebuyAudio = new Audio('sounds/rebuy.mp3');
+                        this._rebuyAudio.volume = 1.0;
+                    }
+                    this._rebuyAudio.currentTime = 0;
+                    this._rebuyAudio.play().catch(() => {});
+                } catch (e) {}
+            }
+
             createConfetti() {
                 const colors = ['#ffffff', '#10b981', '#ef4444', '#3b82f6', '#ec4899'];
                 for (let i = 0; i < 50; i++) {
@@ -2465,23 +2489,42 @@ this.blindLevels = [
                 return num + (suffixes[(v - 20) % 10] || suffixes[v] || suffixes[0]);
             }
 
-            getCurrentPayouts() {
-                const currentPayouts = [...this.payouts];
+            getDefaultPayoutPercentages(places) {
+                const defaults = { 2: [65, 35], 3: [50, 30, 20], 4: [40, 30, 20, 10] };
+                return defaults[places] ? [...defaults[places]] : new Array(places).fill(Math.round(100 / places));
+            }
 
-                // Rebuys and late regs both add a buy-in to the pool;
-                // distribute them sequentially across places (1st, 2nd, 3rd, 1st, …)
-                const totalAdditions = this.rebuys + this.lateRegCount;
-                for (let i = 0; i < totalAdditions; i++) {
-                    const positionIndex = i % this.placesPaid;
-                    currentPayouts[positionIndex] += this.setupData.buyIn;
+            calculatePayouts() {
+                const totalPool = (this.setupData.totalPlayers * this.setupData.buyIn)
+                    + ((this.rebuys + this.lateRegCount) * this.setupData.buyIn)
+                    - this.tournamentFee;
+                if (totalPool <= 0) return new Array(this.placesPaid).fill(0);
+
+                const percs = this.payoutPercentages.slice(0, this.placesPaid);
+                const exacts   = percs.map(p => totalPool * (parseFloat(p) || 0) / 100);
+                const floored  = exacts.map(e => Math.floor(e / 1000) * 1000);
+                const remainders = exacts.map((e, i) => e - floored[i]);
+
+                const flooredTotal = floored.reduce((a, b) => a + b, 0);
+                const numToBoost = Math.max(0, Math.round((totalPool - flooredTotal) / 1000));
+
+                // Distribute leftover 1,000s to places with largest fractional remainders
+                // Tie-break: favour higher places (lower index)
+                const order = remainders
+                    .map((r, i) => ({ r, i }))
+                    .sort((a, b) => b.r - a.r || a.i - b.i)
+                    .map(x => x.i);
+
+                const result = [...floored];
+                for (let k = 0; k < numToBoost && k < order.length; k++) {
+                    result[order[k]] += 1000;
                 }
-
-                return currentPayouts;
+                return result;
             }
 
             getPayoutTickerContent() {
                 const medals = ['🥇', '🥈', '🥉'];
-                const currentPayouts = this.getCurrentPayouts();
+                const currentPayouts = this.calculatePayouts();
                 return currentPayouts.slice(0, this.placesPaid).map((amount, index) => {
                     const medal = index < 3 ? medals[index] + ' ' : '';
                     return `${medal}${this.getOrdinal(index + 1)}: ฿${this.formatNumberCompact(amount)}`;
@@ -2848,24 +2891,22 @@ this.blindLevels = [
 
             renderPayouts() {
                 const grossPool = this.setupData.totalPlayers * this.setupData.buyIn;
-                const netPool = grossPool - this.tournamentFee;
-                const allocated = this.payouts.reduce((a, b) => a + b, 0);
-                const remaining = netPool - allocated;
-                const isValid = remaining === 0 && netPool >= 0;
+                const netPool   = grossPool - this.tournamentFee;
+
+                const percs  = this.payoutPercentages;
+                const sum    = percs.reduce((a, b) => a + (parseFloat(b) || 0), 0);
+                const isValid = Math.abs(sum - 100) < 0.001 && percs.every(p => parseFloat(p) > 0);
+                const sumDisplay = parseFloat(sum.toFixed(2));
 
                 return `
                     <div class="modal-wrapper">
                         <div class="setup-content">
                             <div class="setup-header">
                                 <h1 class="setup-title">PRIZE PAYOUTS</h1>
-                                <p class="setup-subtitle">Distribute ${this.formatNumber(netPool)} THB to players</p>
+                                <p class="setup-subtitle">${this.formatNumber(netPool)} THB prize pool</p>
                             </div>
 
                             <div class="setup-card">
-                                <div class="setup-info" style="margin-top:0;margin-bottom:2rem;color:${isValid ? 'var(--success-color)' : 'var(--danger-color)'};font-size:1rem;">
-                                    <div class="mono">REMAINING: ${this.formatNumber(remaining)} THB</div>
-                                </div>
-
                                 <div class="setup-group">
                                     <label class="setup-label">Tournament Fees</label>
                                     <div class="setup-control">
@@ -2884,35 +2925,51 @@ this.blindLevels = [
 
                                 <div class="setup-group">
                                     <label class="setup-label">Places Paid</label>
-                                    <div style="display: flex; justify-content: center;">
-                                        <select onchange="app.updatePlacesPaid(this.value)" class="setup-select">
-                                            ${Array.from({length: Math.floor(this.setupData.totalPlayers / 2)}, (_, i) => i + 1).map(n =>
-                                                `<option value="${n}" ${this.placesPaid === n ? 'selected' : ''}>${n} ${n === 1 ? 'Place' : 'Places'}</option>`
-                                            ).join('')}
-                                        </select>
+                                    <div style="display:flex;gap:0.5rem;justify-content:center;">
+                                        ${[2, 3, 4].map(n => `
+                                            <button onclick="app.updatePlacesPaid(${n})"
+                                                style="flex:1;max-width:80px;padding:0.6rem 1rem;border-radius:0.5rem;
+                                                    border:1px solid ${this.placesPaid === n ? 'var(--accent-color)' : '#333'};
+                                                    background:${this.placesPaid === n ? 'rgba(59,130,246,0.15)' : 'transparent'};
+                                                    color:${this.placesPaid === n ? 'var(--accent-color)' : 'var(--text-dim)'};
+                                                    cursor:pointer;font-family:var(--font-ui);font-size:0.95rem;
+                                                    font-weight:${this.placesPaid === n ? '600' : '400'};">
+                                                ${n}
+                                            </button>
+                                        `).join('')}
                                     </div>
                                 </div>
 
-                                ${this.payouts.map((amount, index) => `
+                                ${percs.map((pct, index) => `
                                     <div class="setup-group">
                                         <label class="setup-label">${this.getOrdinal(index + 1)} Place</label>
-                                        <div class="setup-control">
-                                            <button class="btn btn-icon" onclick="app.adjustPayout(${index}, -1000)">
-                                                ${icons.Minus}
-                                            </button>
+                                        <div style="display:flex;align-items:center;justify-content:center;gap:0.75rem;">
                                             <input
                                                 type="number"
-                                                value="${amount}"
-                                                onchange="app.updatePayout(${index}, this.value)"
+                                                value="${pct}"
+                                                min="0.1"
+                                                step="0.5"
+                                                oninput="app.updatePayoutPercentage(${index}, this.value)"
                                                 class="setup-input"
-                                                style="max-width: 150px;"
+                                                style="max-width:110px;text-align:center;font-size:1.1rem;"
                                             >
-                                            <button class="btn btn-icon" onclick="app.adjustPayout(${index}, 1000)">
-                                                ${icons.Plus}
-                                            </button>
+                                            <span style="color:var(--text-dim);font-size:1rem;">%</span>
+                                            <span style="color:var(--text-dim);font-size:0.85rem;min-width:90px;">
+                                                ≈ ฿${this.formatNumber(Math.round(netPool * (parseFloat(pct) || 0) / 100))}
+                                            </span>
                                         </div>
                                     </div>
                                 `).join('')}
+
+                                <div style="margin-top:1rem;padding:0.75rem 1rem;border-radius:0.5rem;
+                                    background:${isValid ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)'};
+                                    border:1px solid ${isValid ? 'var(--success-color)' : 'var(--danger-color)'};
+                                    text-align:center;">
+                                    ${isValid
+                                        ? `<span style="color:var(--success-color);font-weight:600;">✓ Total: 100%</span>`
+                                        : `<span style="color:var(--danger-color);">Percentages must add up to 100% — currently at ${sumDisplay}%</span>`
+                                    }
+                                </div>
                             </div>
 
                             <div class="setup-buttons">
@@ -3648,11 +3705,10 @@ this.blindLevels = [
             adjustPlayers(delta) {
                 this.setupData.totalPlayers = Math.max(2, Math.min(20, this.setupData.totalPlayers + delta));
                 
-                // Ensure placesPaid doesn't exceed max (half of total players, rounded down)
-                const maxPlacesPaid = Math.floor(this.setupData.totalPlayers / 2);
-                if (this.placesPaid > maxPlacesPaid) {
-                    this.placesPaid = maxPlacesPaid;
-                    this.payouts = new Array(this.placesPaid).fill(0);
+                // Ensure placesPaid stays in valid range (2–4)
+                if (![2, 3, 4].includes(this.placesPaid)) {
+                    this.placesPaid = 3;
+                    this.payoutPercentages = this.getDefaultPayoutPercentages(this.placesPaid);
                 }
                 
                 // Remove conditions that would now be invalid (>= new total players)
@@ -3954,18 +4010,15 @@ this.blindLevels = [
             goToPayouts() {
                 this.showSetup = false;
                 this.showPayouts = true;
-                
-                // Ensure placesPaid is within valid range
-                const maxPlacesPaid = Math.floor(this.setupData.totalPlayers / 2);
-                if (this.placesPaid > maxPlacesPaid) {
-                    this.placesPaid = maxPlacesPaid;
+
+                // Clamp placesPaid to 2-4
+                if (![2, 3, 4].includes(this.placesPaid)) {
+                    this.placesPaid = 3;
                 }
-                if (this.placesPaid < 1) {
-                    this.placesPaid = 1;
-                }
-                
-                if (this.payouts.length === 0) {
-                    this.payouts = new Array(this.placesPaid).fill(0);
+
+                // Initialize with defaults if not already set correctly
+                if (this.payoutPercentages.length !== this.placesPaid) {
+                    this.payoutPercentages = this.getDefaultPayoutPercentages(this.placesPaid);
                 }
                 this.render();
             }
@@ -3983,18 +4036,12 @@ this.blindLevels = [
 
             updatePlacesPaid(value) {
                 this.placesPaid = parseInt(value);
-                this.payouts = new Array(this.placesPaid).fill(0);
+                this.payoutPercentages = this.getDefaultPayoutPercentages(this.placesPaid);
                 this.render();
             }
 
-            updatePayout(index, value) {
-                this.payouts[index] = parseInt(value) || 0;
-                this.render();
-            }
-
-            adjustPayout(index, delta) {
-                const currentValue = this.payouts[index] || 0;
-                this.payouts[index] = Math.max(0, currentValue + delta);
+            updatePayoutPercentage(index, value) {
+                this.payoutPercentages[index] = parseFloat(value) || 0;
                 this.render();
             }
 
@@ -4278,6 +4325,7 @@ this.blindLevels = [
                     // Anonymous mode — just decrement
                     this.playersRemaining--;
                     if (this.playersRemaining === 1) this.createConfetti();
+                    this.playEliminationSound();
                     this.updateStats();
                 }
             }
@@ -4288,6 +4336,7 @@ this.blindLevels = [
                 delete this.playerTableMap[name];
                 this.playersRemaining = this.activePlayers.length;
                 if (this.playersRemaining === 1) this.createConfetti();
+                this.playEliminationSound();
                 this.showEliminateModal = false;
                 this.recomputeTableCounts();
                 this.publishState();
@@ -4438,6 +4487,7 @@ this.blindLevels = [
             addRebuy() {
                 if (this.areRebuysOpen()) {
                     this.rebuys++;
+                    this.playRebuySound();
                     this.updateStats();
                 }
             }
