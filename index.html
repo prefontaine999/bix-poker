@@ -1515,12 +1515,15 @@ this.blindLevels = [
 
                     if (this.isRemote) {
                         channel.subscribe('state', (msg) => {
-                            this.remoteState = msg.data;
-                            this.renderRemoteUpdate();
+                            try {
+                                this.remoteState = msg.data;
+                                this.renderRemoteUpdate();
+                            } catch(e) { console.error('state handler error:', e); }
                         });
                     } else {
                         channel.subscribe('cmd', (msg) => {
-                            this.executeRemoteCommand(msg.data);
+                            try { this.executeRemoteCommand(msg.data); }
+                            catch(e) { console.error('cmd handler error:', e); }
                         });
                     }
                 } catch(e) { console.warn('Ably init failed:', e); }
@@ -1822,12 +1825,19 @@ this.blindLevels = [
                 // Rebuild when: first render, returning from a flow, or state just
                 // arrived for the first time (waiting → live transition).
                 const stateJustArrived = !!s && !this.remoteHadState;
-                if (stateJustArrived) this.remoteHadState = true;
 
                 if (!this.remoteRendered || this.remoteLastFlow !== null || stateJustArrived) {
                     this.remoteLastFlow = null;
                     this.remoteRendered = true;
-                    document.getElementById('app').innerHTML = this.renderRemote();
+                    try {
+                        document.getElementById('app').innerHTML = this.renderRemote();
+                        // Only mark state as arrived AFTER a successful render so a
+                        // runtime error doesn't permanently lock us on "Waiting for host…"
+                        if (stateJustArrived) this.remoteHadState = true;
+                    } catch(e) {
+                        console.error('renderRemote failed:', e);
+                        // remoteHadState stays false → next tick will retry
+                    }
                     return;
                 }
                 // Already showing live buttons — patch only (no scroll reset)
@@ -1917,9 +1927,15 @@ this.blindLevels = [
 
                     </div>` : `
                     <div style="flex:1;display:flex;align-items:center;justify-content:center;
-                                flex-direction:column;gap:0.5rem;color:#333;">
+                                flex-direction:column;gap:0.75rem;color:#333;">
                         <div style="font-size:0.95rem;">Waiting for host…</div>
                         <div style="font-size:0.75rem;color:#222;">Open the app on the MacBook first</div>
+                        <button onclick="location.reload()"
+                                style="margin-top:0.5rem;padding:0.4rem 1.2rem;background:#1a1a1a;
+                                       border:1px solid #333;border-radius:0.4rem;color:#555;
+                                       font-size:0.7rem;cursor:pointer;letter-spacing:0.05em;">
+                            Reload
+                        </button>
                     </div>`;
 
                 return `
