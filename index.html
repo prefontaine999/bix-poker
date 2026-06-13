@@ -901,29 +901,6 @@
             -webkit-overflow-scrolling: touch;
             min-height: 0;
         }
-        .remote-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 1rem 1.5rem;
-            border-bottom: 1px solid #1a1a1a;
-            flex-shrink: 0;
-        }
-        .remote-title {
-            font-size: 0.65rem;
-            font-weight: 800;
-            letter-spacing: 0.15em;
-            text-transform: uppercase;
-        }
-        .remote-conn {
-            font-size: 0.65rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-        }
         .remote-conn-dot {
             width: 6px; height: 6px;
             border-radius: 50%;
@@ -931,141 +908,6 @@
         }
         .remote-conn-dot.live { background: #10b981; animation: pulse 2s ease-in-out infinite; }
         .remote-conn-dot.waiting { background: #f59e0b; }
-        .remote-state-bar {
-            padding: 1rem 1.5rem;
-            border-bottom: 1px solid #1a1a1a;
-            background: #080808;
-            flex-shrink: 0;
-        }
-        .remote-state-row {
-            display: flex;
-            align-items: baseline;
-            gap: 1.25rem;
-        }
-        .remote-time-display {
-            font-family: var(--font-mono);
-            font-size: 2.5rem;
-            font-weight: 800;
-            letter-spacing: -0.04em;
-            line-height: 1;
-        }
-        .remote-time-display.break-color { color: #f59e0b; }
-        .remote-level-display {
-            font-size: 0.8rem;
-            color: #666;
-        }
-        .remote-level-display strong { color: #fff; }
-        .remote-players-display {
-            font-size: 0.8rem;
-            color: #666;
-            margin-left: auto;
-        }
-        .remote-waiting {
-            text-align: center;
-            padding: 3rem 2rem;
-            color: #444;
-            font-size: 0.9rem;
-            flex: 1;
-        }
-        .remote-waiting .code {
-            font-family: var(--font-mono);
-            font-size: 2rem;
-            font-weight: 800;
-            color: #fff;
-            letter-spacing: 0.15em;
-            margin-top: 1rem;
-        }
-        .remote-controls {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;
-        }
-        .remote-row {
-            display: flex;
-            border-bottom: 1px solid #111;
-            flex-shrink: 0;
-        }
-        .remote-btn {
-            flex: 1;
-            background: #000;
-            color: #fff;
-            border: none;
-            border-right: 1px solid #111;
-            padding: 0;
-            min-height: 68px;
-            font-family: var(--font-ui);
-            font-size: 0.8rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            cursor: pointer;
-            -webkit-tap-highlight-color: transparent;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 0.3rem;
-            transition: background 0.08s;
-            -webkit-user-select: none;
-        }
-        .remote-btn:last-child { border-right: none; }
-        .remote-btn:active { background: #1c1c1c; }
-        .remote-btn:disabled { opacity: 0.2; pointer-events: none; }
-        .remote-btn.primary { background: #fff; color: #000; }
-        .remote-btn.primary:active { background: #ccc; }
-        .remote-btn svg { width: 22px; height: 22px; }
-        .remote-btn-label {
-            font-size: 0.6rem;
-            opacity: 0.5;
-            font-weight: 400;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-        }
-        .remote-btn.danger { color: #ef4444; }
-        .remote-btn.success { color: #10b981; }
-        .remote-btn.warn { color: #f59e0b; }
-        .remote-play-row {
-            flex-shrink: 0;
-            border-bottom: 1px solid #111;
-        }
-        .remote-play-btn {
-            width: 100%;
-            min-height: 90px;
-            background: #000;
-            color: #fff;
-            border: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            -webkit-tap-highlight-color: transparent;
-            transition: background 0.08s;
-        }
-        .remote-play-btn:active { background: #1a1a1a; }
-        .remote-play-btn.running { background: rgba(16,185,129,0.08); }
-        .remote-play-btn.running:active { background: rgba(16,185,129,0.15); }
-        .remote-play-btn svg { width: 40px; height: 40px; }
-        .remote-code-badge {
-            display: flex;
-            flex-direction: column;
-            gap: 0.2rem;
-            cursor: pointer;
-        }
-        .remote-code-badge label {
-            font-size: 0.55rem;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: #444;
-            cursor: pointer;
-        }
-        .remote-code-badge .code-val {
-            font-family: var(--font-mono);
-            font-size: 0.95rem;
-            font-weight: 700;
-            letter-spacing: 0.12em;
-            color: #666;
-        }
     </style>
 </head>
 <body>
@@ -1175,6 +1017,7 @@ this.blindLevels = [
                 this.clockTimeLeft  = 30;
                 this.clock2Played   = false;
                 this.clockInterval  = null;
+                this.clockLingerTimeout = null;
                 this.tournamentFee = 0;
                 this.currentLevel = 0;
                 this.playersRemaining = 7;
@@ -1240,57 +1083,60 @@ this.blindLevels = [
             setupKeyboardShortcuts() {
                 document.addEventListener('keydown', (e) => {
                     if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
-                    
+
+                    const inGame = !this.showSetup && !this.showPayouts && !this.showQR
+                                && !this.showSeating && !this.showRedraw;
+
                     if (e.code === 'Space') {
                         e.preventDefault();
-                        if (!this.showSetup && !this.showPayouts && !this.showSeating && !this.showRedraw && this.currentLevel < this.blindLevels.length - 1) {
+                        if (inGame && this.currentLevel < this.blindLevels.length - 1) {
                             this.toggleTimer();
                         }
                     }
-                    
+
                     if (e.code === 'Backspace') {
                         e.preventDefault();
-                        if (!this.showSetup && !this.showPayouts && !this.showSeating && !this.showRedraw) {
+                        if (inGame) {
                             this.eliminatePlayer();
                         }
                     }
-                    
+
                     if (e.code === 'ArrowLeft') {
                         e.preventDefault();
-                        if (!this.showSetup && !this.showPayouts && !this.showSeating && !this.showRedraw) {
+                        if (inGame) {
                             this.prevLevel();
                         }
                     }
-                    
+
                     if (e.code === 'ArrowRight') {
                         e.preventDefault();
-                        if (!this.showSetup && !this.showPayouts && !this.showSeating && !this.showRedraw) {
+                        if (inGame) {
                             this.nextLevel();
                         }
                     }
-                    
+
                     if (e.code === 'KeyF') {
                         e.preventDefault();
                         this.toggleFullscreen();
                     }
-                    
+
                     if (e.code === 'KeyT') {
                         e.preventDefault();
-                        if (!this.showSetup && !this.showPayouts && !this.showSeating && !this.showRedraw && !this.isOnBreak && this.currentLevel < this.blindLevels.length - 1) {
+                        if (inGame && !this.isOnBreak && this.currentLevel < this.blindLevels.length - 1) {
                             this.addTwoMinutes();
                         }
                     }
-                    
+
                     if (e.code === 'Enter') {
                         e.preventDefault();
-                        if (!this.showSetup && !this.showPayouts && !this.showSeating && !this.showRedraw) {
+                        if (inGame) {
                             this.toggleControlPanel();
                         }
                     }
-                    
+
                     if (e.code === 'KeyR') {
                         e.preventDefault();
-                        if (!this.showSetup && !this.showPayouts && !this.showSeating && !this.showRedraw) {
+                        if (inGame) {
                             this.addRebuy();
                         }
                     }
@@ -1420,8 +1266,8 @@ this.blindLevels = [
                 timerEl.classList.toggle('dim', !this.isRunning);
                 timerEl.classList.toggle('critical', this.isRunning && this.timeLeft < 60 && !this.isExtended);
                 
-                // Update progress bar
-                const pct = isLastLevel ? 100 : ((this.totalTime - this.timeLeft) / this.totalTime) * 100;
+                // Update progress bar (clamp: +2 Min can push timeLeft above totalTime)
+                const pct = isLastLevel ? 100 : Math.max(0, ((this.totalTime - this.timeLeft) / this.totalTime) * 100);
                 progressEl.style.width = pct + '%';
                 progressEl.classList.toggle('critical', this.timeLeft < 60 && !this.isExtended);
             }
@@ -1503,12 +1349,12 @@ this.blindLevels = [
                     client.connection.on('connected', () => {
                         this.ablyConnected = true;
                         if (this.isRemote) this.renderRemoteUpdate();
-                        else this.renderRoomCode();
+                        else if (this.showQR) this.render();
                     });
                     client.connection.on('disconnected', () => {
                         this.ablyConnected = false;
                         if (this.isRemote) this.renderRemoteUpdate();
-                        else this.renderRoomCode();
+                        else if (this.showQR) this.render();
                     });
                     client.connection.on('failed', () => {
                         this.ablyConnected = false;
@@ -1716,14 +1562,6 @@ this.blindLevels = [
                 }
             }
 
-            // Patch just the room-code badge without a full re-render
-            renderRoomCode() {
-                const el = document.getElementById('remote-code-badge');
-                if (!el) return;
-                el.innerHTML = this.roomCodeBadgeHTML();
-                this.renderQRCode();
-            }
-
             renderQRCode(size = 148) {
                 const el = document.getElementById('remote-qr-canvas');
                 if (!el || !window.QRCode) return;
@@ -1748,38 +1586,6 @@ this.blindLevels = [
                     colorLight:   '#ffffff',
                     correctLevel: QRCode.CorrectLevel.M
                 });
-            }
-
-            roomCodeBadgeHTML() {
-                const dotClass = this.ablyConnected ? 'live' : 'waiting';
-                const statusText = this.ablyConnected ? 'Ready' : 'Connecting…';
-                return `
-                    <div onclick="app.copyRemoteUrl()" title="Tap to copy remote URL"
-                         style="display:inline-flex;flex-direction:column;align-items:center;gap:0.5rem;
-                                background:rgba(255,255,255,0.04);border:1px solid #2a2a2a;border-radius:0.5rem;
-                                padding:0.75rem 1.5rem;cursor:pointer;margin:0 auto;">
-                        <div style="font-size:0.6rem;text-transform:uppercase;letter-spacing:0.15em;color:#666;">
-                            Remote Control
-                        </div>
-                        <div id="remote-qr-canvas"
-                             style="background:#fff;border-radius:0.35rem;padding:6px;line-height:0;">
-                        </div>
-                        <div style="font-family:var(--font-mono);font-size:2rem;font-weight:800;letter-spacing:0.2em;color:#fff;">
-                            ${this.roomCode}
-                        </div>
-                        <div style="display:flex;align-items:center;gap:0.4rem;font-size:0.65rem;color:#555;">
-                            <div class="remote-conn-dot ${dotClass}"></div>
-                            ${statusText} &nbsp;·&nbsp; Tap to copy URL
-                        </div>
-                    </div>`;
-            }
-
-            copyRemoteUrl() {
-                const url = `${location.origin}${location.pathname}?remote=${this.roomCode}`;
-                navigator.clipboard.writeText(url).catch(() => {});
-                // Brief flash feedback
-                const el = document.querySelector('.code-val');
-                if (el) { const orig = el.textContent; el.textContent = 'COPIED!'; setTimeout(() => { if(el) el.textContent = orig; }, 1200); }
             }
 
             // ── Full rebuild helper — always call instead of direct innerHTML ──
@@ -2264,10 +2070,6 @@ this.blindLevels = [
                 this.rebuildRemote();
             }
 
-            remoteUndoEliminate() {
-                this.sendCommand({ type: 'undoEliminate' });
-            }
-
             remoteStartReinstate() {
                 const s = this.remoteState;
                 if (!s || !s.eliminatedNames || s.eliminatedNames.length === 0) return;
@@ -2656,6 +2458,7 @@ this.blindLevels = [
             // ── Clock feature ─────────────────────────────────────────────
             startClock() {
                 clearInterval(this.clockInterval);
+                clearTimeout(this.clockLingerTimeout);
                 this.clockActive   = true;
                 this.clockTimeLeft = 30;
                 this.clock2Played  = false;
@@ -2696,7 +2499,7 @@ this.blindLevels = [
                         }
                         this.clockTimeLeft = 0;
                         this.publishState(); // broadcast the 0 state while still active
-                        setTimeout(() => {
+                        this.clockLingerTimeout = setTimeout(() => {
                             if (!this.clockActive) return; // cancelled during linger
                             this.clockActive = false;
                             this.render();
@@ -2721,6 +2524,7 @@ this.blindLevels = [
 
             cancelClock() {
                 clearInterval(this.clockInterval);
+                clearTimeout(this.clockLingerTimeout);
                 this.clockActive = false;
                 this.render();
                 this.publishState();
@@ -2773,15 +2577,15 @@ this.blindLevels = [
             }
 
             calculatePayouts() {
+                // totalPlayers already includes late registrations (incremented on each late reg)
                 const totalPool = (this.setupData.totalPlayers * this.setupData.buyIn)
-                    + ((this.rebuys + this.lateRegCount) * this.setupData.buyIn)
+                    + (this.rebuys * this.setupData.buyIn)
                     - this.tournamentFee;
                 if (totalPool <= 0) return new Array(this.placesPaid).fill(0);
 
                 const percs = this.payoutPercentages.slice(0, this.placesPaid);
                 const exacts   = percs.map(p => totalPool * (parseFloat(p) || 0) / 100);
                 const floored  = exacts.map(e => Math.floor(e / 1000) * 1000);
-                const remainders = exacts.map((e, i) => e - floored[i]);
 
                 const flooredTotal = floored.reduce((a, b) => a + b, 0);
                 const missing = totalPool - flooredTotal;
@@ -3364,8 +3168,8 @@ this.blindLevels = [
                                 </button>
                             </div>
 
-                            <button onclick="app.backToPayouts()" class="btn btn-secondary" style="width: 100%; padding: 0.75rem; margin-top: 1rem;">
-                                Back to Payouts
+                            <button onclick="app.goToQR()" class="btn btn-secondary" style="width: 100%; padding: 0.75rem; margin-top: 1rem;">
+                                ← Back
                             </button>
                         </div>
                     </div>
@@ -3436,7 +3240,7 @@ this.blindLevels = [
                 const rawBB = avgChips / cur.big;
                 const avgBB = rawBB.toFixed(rawBB >= 10 ? 0 : 1);
                 
-                const pct = ((this.totalTime - this.timeLeft) / this.totalTime) * 100;
+                const pct = Math.max(0, ((this.totalTime - this.timeLeft) / this.totalTime) * 100);
 
                 return `
                     <div class="split-layout">
@@ -4349,6 +4153,10 @@ this.blindLevels = [
                 this.showSetup = false;
                 this.showPayouts = true;
 
+                // Fresh tournament — clear money state left over from a previous game
+                this.rebuys = 0;
+                this.lateRegCount = 0;
+
                 // Clamp placesPaid to 2-4
                 if (![2, 3, 4].includes(this.placesPaid)) {
                     this.placesPaid = 3;
@@ -4417,6 +4225,7 @@ this.blindLevels = [
 
             goToQR() {
                 this.showPayouts = false;
+                this.showSeating = false;
                 this.showQR = true;
                 this.render();
             }
@@ -4425,7 +4234,10 @@ this.blindLevels = [
                 this.showPayouts = false;
                 this.showQR = false;
                 this.showSeating = true;
-                this.playerNames = new Array(this.setupData.totalPlayers).fill('');
+                // Preserve typed names when re-entering with the same player count
+                if (this.playerNames.length !== this.setupData.totalPlayers) {
+                    this.playerNames = new Array(this.setupData.totalPlayers).fill('');
+                }
                 this.tableCount = this.setupData.totalPlayers > 13 ? 3 : this.setupData.totalPlayers > 7 ? 2 : 1;
                 this.tableAssignments = null;
                 this.render();
